@@ -1,3 +1,4 @@
 .direnv/
 **/*zig-*
 **/*.iso
+zen/
