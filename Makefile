@@ -1,73 +1,64 @@
-# Nuke built-in rules and variables.
-override MAKEFLAGS += -rR
+# Zig compiler flags.
+ZIGFLAGS := -Doptimize=ReleaseSafe
 
-override IMAGE_NAME := os401b
+# Artifacts paths.
+ISO_DIR := iso_root
+ISO_FILE := zen.iso
+KERNEL_BIN := kernel/zig-out/bin/kernel
 
-# Convenience macro to reliably declare user overridable variables.
-define DEFAULT_VAR =
-    ifeq ($(origin $1),default)
-        override $(1) := $(2)
-    endif
-    ifeq ($(origin $1),undefined)
-        override $(1) := $(2)
-    endif
-endef
-
-override DEFAULT_KARCH := x86_64
-$(eval $(call DEFAULT_VAR,KARCH,$(DEFAULT_KARCH)))
-
-override DEFAULT_KZIGFLAGS := -Doptimize=ReleaseSafe
-$(eval $(call DEFAULT_VAR,KZIGFLAGS,$(DEFAULT_KZIGFLAGS)))
-
+# Default target.
 .PHONY: all
-all: $(IMAGE_NAME).iso
+all: $(ISO_FILE)
 
-.PHONY: run
-run: run-$(KARCH)
+# Download and build the Limine bootloader.
+boot/limine:
+	git clone https://github.com/limine-bootloader/limine.git \
+		--branch=v8.x-binary --depth=1                        \
+		boot/limine
+	$(MAKE) -C boot/limine
 
-.PHONY: run-x86_64
-run-x86_64: ovmf $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -bios ovmf-x86_64/OVMF.fd -cdrom $(IMAGE_NAME).iso -boot d
-
-.PHONY: ovmf
-ovmf: ovmf-$(KARCH)
-
-ovmf-x86_64:
-	mkdir -p ovmf-x86_64
-	cd ovmf-x86_64 && curl -o OVMF.fd https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF.fd
-
-limine/limine:
-	rm -rf limine
-	git clone https://github.com/limine-bootloader/limine.git --branch=v8.x-binary --depth=1
-	$(MAKE) -C limine
-
+# Build the kernel binary.
 .PHONY: kernel
 kernel:
-	cd kernel && zig build $(KZIGFLAGS)
+	cd kernel && zig build $(ZIGFLAGS)
 
-$(IMAGE_NAME).iso: limine/limine kernel
-	rm -rf iso_root
-	mkdir -p iso_root/boot
-	cp -v kernel/zig-out/bin/kernel iso_root/boot/
-	mkdir -p iso_root/boot/limine
-	cp -v limine.conf iso_root/boot/limine/
-	mkdir -p iso_root/EFI/BOOT
-	cp -v limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
-	cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/
-	cp -v limine/BOOTIA32.EFI iso_root/EFI/BOOT/
-	xorriso -as mkisofs -b boot/limine/limine-bios-cd.bin \
-		-no-emul-boot -boot-load-size 4 -boot-info-table \
-		--efi-boot boot/limine/limine-uefi-cd.bin \
-		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		iso_root -o $(IMAGE_NAME).iso
-	./limine/limine bios-install $(IMAGE_NAME).iso
-	rm -rf iso_root
+# Create a bootable ISO image.
+$(ISO_FILE): boot/limine kernel
+	rm -rf $(ISO_DIR)               # Delete the existing temporary ISO directory.
+	mkdir -p $(ISO_DIR)/EFI/BOOT    # Create the necessary directory structure.
 
+	cp boot/limine.conf $(ISO_DIR)  # Copy the Limine bootloader configuration file.
+	cp $(KERNEL_BIN) $(ISO_DIR)     # Copy the kernel binary.
+
+	cp boot/limine/limine-bios.sys    \
+	   boot/limine/limine-bios-cd.bin \
+	   boot/limine/limine-uefi-cd.bin \
+	   $(ISO_DIR)  # Copy the Limine bootloader binaries.
+	cp boot/limine/BOOTX64.EFI        \
+	   boot/limine/BOOTIA32.EFI       \
+	   $(ISO_DIR)/EFI/BOOT/  # Copy the UEFI binaries.
+
+	xorriso -as mkisofs -R -r -J -b limine-bios-cd.bin                \
+			-no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
+			-apm-block-size 2048 --efi-boot limine-uefi-cd.bin        \
+			-efi-boot-part --efi-boot-image --protective-msdos-label  \
+			$(ISO_DIR) -o $(ISO_FILE)  # Create the bootable ISO image.
+
+	./boot/limine/limine bios-install $(ISO_FILE)  # Install Limine.
+	rm -rf $(ISO_DIR)                              # Clean up directory.
+
+# Run the ISO image in QEMU.
+.PHONY: run
+run: $(ISO_FILE)
+	qemu-system-x86_64 -M q35 -m 128M -cdrom $(ISO_FILE) -boot d
+
+# Clean up build artifacts.
 .PHONY: clean
 clean:
-	rm -rf iso_root $(IMAGE_NAME).iso
-	rm -rf kernel/.zig-cache kernel/zig-cache kernel/zig-out
+	rm -rf $(ISO_DIR) $(ISO_FILE)
+	rm -rf kernel/.zig-cache kernel/zig-out
 
+# Clean up everything.
 .PHONY: distclean
 distclean: clean
-	rm -rf limine ovmf
+	rm -rf boot/limine
