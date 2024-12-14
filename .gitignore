@@ -1,2 +1,5 @@
 .direnv/
 **/*zig-*
+**/*.iso
+limine*/
+ovmf-*
