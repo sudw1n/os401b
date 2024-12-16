@@ -14,18 +14,9 @@ export fn _start() callconv(.C) noreturn {
         hcf();
     }
 
-    if (framebuffer_request.response) |framebuffer_response| {
-        if (framebuffer_response.framebuffer_count < 1) {
-            hcf();
-        }
+    kmain();
+}
 
-        const framebuffer = framebuffer_response.framebuffers()[0];
-
-        for (0..100) |i| {
-            const pixel_offset = i * framebuffer.pitch + i * 4;
-            @as(*u32, @ptrCast(@alignCast((framebuffer.address + pixel_offset)))).* = 0xffffffff;
-        }
-    }
-
+pub fn kmain() noreturn {
     hcf();
 }
