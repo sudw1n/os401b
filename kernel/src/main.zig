@@ -1,9 +1,7 @@
 const std = @import("std");
 const limine = @import("limine");
 
-pub export var framebuffer_request: limine.FramebufferRequest = .{};
-
-pub export var base_revision: limine.BaseRevision = .{ .revision = 2 };
+pub export const base_revision: limine.BaseRevision = .{ .revision = 3 };
 
 inline fn hcf() noreturn {
     while (true) {
