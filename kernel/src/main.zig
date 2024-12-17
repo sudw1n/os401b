@@ -1,7 +1,7 @@
 const std = @import("std");
 const limine = @import("limine");
 
-pub export const base_revision: limine.BaseRevision = .{ .revision = 3 };
+pub export var base_revision: limine.BaseRevision = .{ .revision = 3 };
 
 inline fn hcf() noreturn {
     while (true) {
