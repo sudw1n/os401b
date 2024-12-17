@@ -1,64 +1,91 @@
+BUILD_DIR                  := build
+# this is for downloaded content which need not be repeatedly done
+DIST_DIR                   := dist
+
+OVMF_DIR                   := $(DIST_DIR)/ovmf
+OVMF_URL                   := https://retrage.github.io/edk2-nightly/bin/RELEASEX64_OVMF.fd
+OVMF_FILE                  := OVMF.fd
+
+LIMINE_DIR                 := $(DIST_DIR)/limine
+
+ISO_DIR                    := $(BUILD_DIR)/iso_root
+ISO_FILE                   := $(BUILD_DIR)/os401b.iso
+
+EFI_DIR                    := $(ISO_DIR)/EFI/BOOT
+KERNEL_DIR                 := kernel
+KERNEL_BIN                 := $(KERNEL_DIR)/zig-out/bin/kernel
+
 # Zig compiler flags.
-ZIGFLAGS := -Doptimize=ReleaseSafe
+ZIG_FLAGS                  := -Doptimize=ReleaseSafe
 
-# Artifacts paths.
-ISO_DIR := iso_root
-ISO_FILE := zen.iso
-KERNEL_BIN := kernel/zig-out/bin/kernel
+QEMU                       := qemu-system-x86_64
+# use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
+# memory, instruct the VM to boot from the CD-ROM (drive `d`) first and specify the CD-ROM ISO file
+QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE)
 
-# Default target.
-.PHONY: all
-all: $(ISO_FILE)
+$(BUILD_DIR):
+	@mkdir $(BUILD_DIR)
 
-# Download and build the Limine bootloader.
-boot/limine:
-	git clone https://github.com/limine-bootloader/limine.git \
-		--branch=v8.x-binary --depth=1                        \
-		boot/limine
-	$(MAKE) -C boot/limine
+$(DIST_DIR):
+	@mkdir $(DIST_DIR)
 
-# Build the kernel binary.
-.PHONY: kernel
-kernel:
-	cd kernel && zig build $(ZIGFLAGS)
+$(ISO_DIR): | $(BUILD_DIR)
+	@mkdir $(ISO_DIR)
 
-# Create a bootable ISO image.
-$(ISO_FILE): boot/limine kernel
-	rm -rf $(ISO_DIR)               # Delete the existing temporary ISO directory.
-	mkdir -p $(ISO_DIR)/EFI/BOOT    # Create the necessary directory structure.
+$(OVMF_DIR): | $(DIST_DIR)
+	@mkdir $(OVMF_DIR)
 
-	cp boot/limine.conf $(ISO_DIR)  # Copy the Limine bootloader configuration file.
-	cp $(KERNEL_BIN) $(ISO_DIR)     # Copy the kernel binary.
+$(EFI_DIR):  | $(ISO_DIR)
+	@mkdir -p $(EFI_DIR)
 
-	cp boot/limine/limine-bios.sys    \
-	   boot/limine/limine-bios-cd.bin \
-	   boot/limine/limine-uefi-cd.bin \
-	   $(ISO_DIR)  # Copy the Limine bootloader binaries.
-	cp boot/limine/BOOTX64.EFI        \
-	   boot/limine/BOOTIA32.EFI       \
-	   $(ISO_DIR)/EFI/BOOT/  # Copy the UEFI binaries.
+# run using OVMF (UEFI)
+.PHONY: run
+run: $(OVMF_DIR)/$(OVMF_FILE) $(ISO_FILE)
+	$(QEMU) -bios $(OVMF_DIR)/$(OVMF_FILE) $(QEMU_COMMON_FLAGS)
 
+# run using legacy BIOS
+.PHONY: run-bios
+run-bios: $(ISO_FILE)
+	$(QEMU) $(QEMU_COMMON_FLAGS)
+
+$(OVMF_DIR)/$(OVMF_FILE): | $(OVMF_DIR)
+	wget -O $(OVMF_DIR)/$(OVMF_FILE) $(OVMF_URL)
+
+$(ISO_FILE): $(DIST_DIR)/limine kernel | $(ISO_DIR) $(EFI_DIR)
+	cp -v boot/limine.conf $(ISO_DIR)
+	cp -v $(KERNEL_BIN) $(ISO_DIR)
+
+	cp -v $(LIMINE_DIR)/limine-bios.sys $(LIMINE_DIR)/limine-bios-cd.bin $(LIMINE_DIR)/limine-uefi-cd.bin $(ISO_DIR)
+
+	cp -v $(LIMINE_DIR)/BOOTX64.EFI $(LIMINE_DIR)/BOOTIA32.EFI $(EFI_DIR)
+
+	# Create the bootable ISO image.
 	xorriso -as mkisofs -R -r -J -b limine-bios-cd.bin                \
 			-no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
 			-apm-block-size 2048 --efi-boot limine-uefi-cd.bin        \
 			-efi-boot-part --efi-boot-image --protective-msdos-label  \
-			$(ISO_DIR) -o $(ISO_FILE)  # Create the bootable ISO image.
+			$(ISO_DIR) -o $(ISO_FILE)
 
-	./boot/limine/limine bios-install $(ISO_FILE)  # Install Limine.
-	rm -rf $(ISO_DIR)                              # Clean up directory.
+	$(LIMINE_DIR)/limine bios-install $(ISO_FILE)
 
-# Run the ISO image in QEMU.
-.PHONY: run
-run: $(ISO_FILE)
-	qemu-system-x86_64 -M q35 -m 128M -cdrom $(ISO_FILE) -boot d
+	rm -rf $(ISO_DIR)
 
-# Clean up build artifacts.
+
+$(DIST_DIR)/limine: | $(DIST_DIR)
+	git clone --depth 1 --branch=v8.x-binary https://github.com/limine-bootloader/limine.git $(LIMINE_DIR)
+	$(MAKE) -C $(LIMINE_DIR)
+
+.PHONY: kernel
+kernel:
+	cd kernel && zig build $(ZIG_FLAGS)
+
+# clean up build artifacts
 .PHONY: clean
 clean:
-	rm -rf $(ISO_DIR) $(ISO_FILE)
-	rm -rf kernel/.zig-cache kernel/zig-out
+	rm -rf $(BUILD_DIR)
 
-# Clean up everything.
+# clean up everything
 .PHONY: distclean
 distclean: clean
-	rm -rf boot/limine
+	rm -rf $(DIST_DIR)
+	rm -rf $(KERNEL_DIR)/.zig-cache $(KERNEL_DIR)/zig-out
