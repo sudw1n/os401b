@@ -18,6 +18,7 @@
         gnumake
         libisoburn
         qemu
+        wget
         zig
         zls
       ];
