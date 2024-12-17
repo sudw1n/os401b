@@ -12,6 +12,7 @@ You'll need the following packages installed (package names are according to
 - [libisoburn](http://libburnia-project.org/)
 - [qemu](https://www.qemu.org/)
 - [zig](https://ziglang.org/)
+- [wget](https://www.gnu.org/software/wget/)
 - (Optional) [zls](https://github.com/zigtools/zls) (This is just for LSP support in your editor)
 
 If you're using Nix, there's a [flake.nix](flake.nix) setup with a development shell. You can just run `nix
