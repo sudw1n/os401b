@@ -25,3 +25,9 @@ make run
 ```
 
 This should fetch, build the necessary files and run QEMU with the OS.
+
+If you don't want to download and use the OVMF files for UEFI support, you can run:
+```
+make run-bios
+```
+This will run QEMU with the legacy BIOS.
