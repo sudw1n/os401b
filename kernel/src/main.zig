@@ -14,6 +14,10 @@ fn hcf() noreturn {
     }
 }
 
+pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    hcf();
+}
+
 export fn _start() callconv(.C) noreturn {
     if (!base_revision.is_supported()) {
         hcf();
@@ -25,6 +29,6 @@ export fn _start() callconv(.C) noreturn {
 }
 
 pub fn kmain() !void {
-    var terminal = Terminal.init(50, 50, Color.White, Color.Black) orelse hcf();
-    try terminal.print("Hello world!");
+    var terminal = Terminal.init(Color.White, Color.Black) orelse hcf();
+    try terminal.print("Welcome to OS401b!\n\n$ ");
 }
