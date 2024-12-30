@@ -2,6 +2,8 @@ const std = @import("std");
 const limine = @import("limine");
 const font = @import("font.zig");
 
+const Terminus = font.Terminus;
+
 /// A pixel value
 pub const Pixel = u32;
 
@@ -33,12 +35,20 @@ pub const Framebuffer = struct {
 
     /// The underlying memory seen as an array of Pixels
     buffer: []volatile Pixel,
-    /// width in pixels
+    /// Number of visible pixels in one row.
     width: usize,
-    /// height in pixels
+    /// Number of visible rows in the framebuffer.
     height: usize,
+    /// Number of bytes in each pixel
+    pixelWidth: usize,
+    /// Number of actual bytes in each row.
+    ///
+    /// This can be more than, but is at least equal to, `width * pixelWidth` because pitch includes padding or
+    /// alignment between rows.
+    pitch: usize,
 
-    font: font.Terminus,
+    /// The font being used for drawing glyphs in the framebuffer
+    font: Terminus,
 
     pub fn init() ?Framebuffer {
         if (framebuffer_request.response) |framebuffer_response| {
@@ -46,13 +56,17 @@ pub const Framebuffer = struct {
                 return null;
             }
             const framebuffer = framebuffer_response.framebuffers()[0];
-            const fb_len = framebuffer.width * framebuffer.height;
+            // here we need to use the pitch because we need to include the actual allocated buffer
+            // including the unused padding bytes
+            const fb_len = (framebuffer.height * framebuffer.pitch) / @sizeOf(Pixel);
             const buffer: []volatile Pixel = @as([*]volatile Pixel, @ptrCast(@alignCast(framebuffer.address)))[0..fb_len];
             return Framebuffer{
                 .buffer = buffer,
                 .width = framebuffer.width,
                 .height = framebuffer.height,
-                .font = font.Terminus.init(),
+                .pixelWidth = framebuffer.bpp / 8,
+                .pitch = framebuffer.pitch,
+                .font = Terminus.init(),
             };
         }
         return null;
@@ -74,17 +88,30 @@ pub const Framebuffer = struct {
                 const mask = @as(u8, 1) << bitOffset;
 
                 const color = if ((bitmap[i] & mask) != 0) fg else bg;
-                try self.putPixel(x + j, y + i, color);
+                try self.putColor(x + j, y + i, color);
             }
         }
     }
 
-    /// Color the current pixel with given `color` at given x and y
-    pub fn putPixel(self: Framebuffer, x: usize, y: usize, color: Color) Error!void {
-        const offset = y * self.width + x;
+    /// Get the offset within the buffer for the given (x, y) pixel coordinates.
+    fn getOffset(self: Framebuffer, x: usize, y: usize) Error!usize {
+        const offset = (y * self.width) + x;
         if (offset >= self.buffer.len) {
             return Error.OutOfBounds;
         }
+        return offset;
+    }
+
+    /// Get the color of the current pixel at given x and y
+    pub fn getColor(self: Framebuffer, x: usize, y: usize) Error!Color {
+        const offset = try self.getOffset(x, y);
+        const pixel = self.buffer[offset];
+        return @enumFromInt(pixel);
+    }
+
+    /// Color the current pixel with given `color` at given x and y
+    pub fn putColor(self: Framebuffer, x: usize, y: usize, color: Color) Error!void {
+        const offset = try self.getOffset(x, y);
         self.buffer[offset] = color.toPixel();
     }
 };
