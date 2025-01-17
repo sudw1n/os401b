@@ -76,6 +76,28 @@ pub const Framebuffer = struct {
         @memset(self.buffer, color.toPixel());
     }
 
+    pub fn scroll(self: Framebuffer, bg_color: Color) void {
+        const screen_size = self.width * self.height;
+        const pixels_per_line = self.width * self.font.hdr.height;
+
+        // treat the buffer as an array of u64s, so we can copy 2 pixels at a time
+        const buffer64: [*]volatile u64 = @ptrCast(@alignCast(self.buffer.ptr));
+
+        // since we're copying 2 pixels at a time, we need to divide the number of pixels by 2
+        // and we're not copying the first line, so we subtract the number of pixels in one line
+        const iterations = (screen_size - pixels_per_line) / 2;
+
+        // Copy the entire screen (except the first line) one line up.
+        for (0..iterations) |i| {
+            // since we're copying 2 pixels at a time, there will be (pixels_per_line / 2) pixels
+            // between the two lines
+            buffer64[i] = buffer64[i + (pixels_per_line / 2)];
+        }
+
+        // Clear the last line.
+        @memset(self.buffer[screen_size - pixels_per_line .. screen_size], bg_color.toPixel());
+    }
+
     /// Draw the given character corresponding with the given foreground color otherwise will be the
     /// background color.
     pub fn drawChar(self: Framebuffer, character: u8, x: usize, y: usize, fg: Color, bg: Color) Error!void {

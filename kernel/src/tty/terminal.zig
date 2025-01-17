@@ -5,6 +5,9 @@ const fblib = @import("framebuffer.zig");
 const Framebuffer = fblib.Framebuffer;
 const Color = fblib.Color;
 
+// how many spaces a tab character should be replaced with
+const TAB_WIDTH = 4;
+
 pub const Terminal = struct {
     /// The underlying framebuffer
     framebuffer: Framebuffer,
@@ -17,10 +20,8 @@ pub const Terminal = struct {
     /// The background color
     bg: Color,
 
-    // current row
-    row: usize,
-    // current column
-    col: usize,
+    // linear position of the cursor
+    cursor: usize,
 
     pub const Error = error{Unimplemented} || fblib.Framebuffer.Error;
 
@@ -35,8 +36,7 @@ pub const Terminal = struct {
             .height = framebuffer.height / framebuffer.font.hdr.height,
             .fg = foreground_color,
             .bg = background_color,
-            .row = 0,
-            .col = 0,
+            .cursor = 0,
         };
     }
 
@@ -44,62 +44,48 @@ pub const Terminal = struct {
         for (bytes) |char| {
             switch (char) {
                 '\r', '\n' => try self.newLine(),
-                else => {
-                    if (!std.ascii.isPrint(char)) {
-                        return Error.Unimplemented;
-                    }
-                    try self.framebuffer.drawChar(char, self.col, self.row, self.fg, self.bg);
-                    // increment column by width of the character; move to next column
-                    self.col += self.framebuffer.font.hdr.width;
-                    // if we've reached end of the line, move to next row
-                    if (self.col >= self.width) {
-                        self.col = 0;
-                        self.row += self.framebuffer.font.hdr.height;
-
-                        // if we reach the last line, trigger scroll
-                        if (self.row >= self.height) {
-                            try self.scroll();
-                        }
-                    }
-                },
+                '\t' => try self.tab(),
+                else => try self.writeChar(char),
             }
         }
+    }
+
+    fn writeChar(self: *Terminal, char: u8) Error!void {
+        // if we've reached end of the line, move to next row
+        if (self.cursor >= (self.width * self.height) - 1) {
+            self.framebuffer.scroll(self.bg);
+            // we now have an empty row at the bottom
+            self.cursor -= self.width;
+        }
+        // get the current row and column in terms of pixels
+        const x = (self.cursor % self.width) * self.framebuffer.font.hdr.width;
+        const y = (self.cursor / self.width) * self.framebuffer.font.hdr.height;
+        if (!std.ascii.isPrint(char)) {
+            // unprintable characters get replaced with ?
+            try self.framebuffer.drawChar('?', x, y, self.fg, self.bg);
+        } else {
+            try self.framebuffer.drawChar(char, x, y, self.fg, self.bg);
+        }
+        self.cursor += 1;
     }
 
     fn newLine(self: *Terminal) Error!void {
-        // check if the current row is the last row
-        if (self.row == self.height - 1) {
-            // scroll the terminal
-            try self.scroll();
-        } else {
-            // move to the next row
-            self.row += self.framebuffer.font.hdr.height;
-        }
-        // reset the column
-        self.col = 0;
-    }
-
-    fn scroll(self: *Terminal) Error!void {
-        // copy all of the rows upwards, since the first row is going to be overridden by the second
-        // one we start the indexing of the rows from 1
-        for (1..self.height) |y| {
-            for (0..self.width) |x| {
-                const color = try self.framebuffer.getColor(x, y);
-                try self.framebuffer.putColor(x, y - 1, color);
+        while (true) {
+            // add additional spaces to fill the row
+            try self.writeChar(' ');
+            if (self.cursor % self.width == 0) {
+                break;
             }
         }
-
-        // clear the last row
-        try self.clearRow(self.height - 1);
-
-        // reset the column and row
-        self.col = 0;
-        self.row = self.height - 1;
     }
 
-    fn clearRow(self: *Terminal, row: usize) Error!void {
-        for (0..self.width) |col| {
-            try self.framebuffer.putColor(col, row, self.bg);
+    fn tab(self: *Terminal) Error!void {
+        while (true) {
+            // add additional spaces to fill the tab character
+            try self.writeChar(' ');
+            if (self.cursor % TAB_WIDTH == 0) {
+                break;
+            }
         }
     }
 };

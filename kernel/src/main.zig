@@ -29,6 +29,7 @@ export fn _start() callconv(.C) noreturn {
 }
 
 pub fn kmain() !void {
-    var terminal = Terminal.init(Color.White, Color.Black) orelse hcf();
-    try terminal.print("Welcome to OS401b!\n\n$ ");
+    var terminal = Terminal.init(Color.White, Color.Blue) orelse hcf();
+    try terminal.print("Welcome to OS401b!\n\n");
+    try terminal.print("$ ");
 }
