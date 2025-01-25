@@ -1,10 +1,9 @@
 const std = @import("std");
 const limine = @import("limine");
 const fblib = @import("tty/framebuffer.zig");
-const terminallib = @import("tty/terminal.zig");
 
 const Color = fblib.Color;
-const Terminal = terminallib.Terminal;
+const terminal = @import("tty/terminal.zig");
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 3 };
 
@@ -29,7 +28,7 @@ export fn _start() callconv(.C) noreturn {
 }
 
 pub fn kmain() !void {
-    var terminal = Terminal.init(Color.White, Color.Blue) orelse hcf();
-    try terminal.print("Welcome to OS401b!\n\n");
-    try terminal.print("$ ");
+    terminal.init(Color.White, Color.Blue) catch hcf();
+    try terminal.print("Welcome to OS401b!\n\n", .{});
+    try terminal.print("$ ", .{});
 }
