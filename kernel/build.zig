@@ -22,6 +22,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const limine = b.dependency("limine", .{});
 
+    const os401b = b.addModule("os401b", .{
+        .root_source_file = b.path("src/os401b.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    os401b.addImport("limine", limine.module("limine"));
+
     const kernel = b.addExecutable(.{
         .name = "kernel",
         .root_source_file = b.path("src/main.zig"),
@@ -31,7 +38,7 @@ pub fn build(b: *std.Build) void {
     });
 
     kernel.want_lto = false;
-    kernel.root_module.addImport("limine", limine.module("limine"));
     kernel.setLinkerScriptPath(linker_script_path);
+    kernel.root_module.addImport("os401b", os401b);
     b.installArtifact(kernel);
 }
