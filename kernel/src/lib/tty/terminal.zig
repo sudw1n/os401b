@@ -43,6 +43,19 @@ pub fn print(comptime fmt: []const u8, args: anytype) !void {
     try std.fmt.format(@as(TerminalWriter, undefined), fmt, args);
 }
 
+/// Write to screen with standard formatting, with the specified color
+pub fn colorPrint(color: Color, comptime fmt: []const u8, args: anytype) !void {
+    const old_fg = fg;
+
+    // set the new colour
+    fg = color;
+
+    try std.fmt.format(@as(TerminalWriter, undefined), fmt, args);
+
+    // restore the old foreground color
+    fg = old_fg;
+}
+
 fn writeStr(bytes: []const u8) Error!void {
     for (bytes) |char| {
         switch (char) {
