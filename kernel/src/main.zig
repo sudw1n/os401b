@@ -1,28 +1,42 @@
 const std = @import("std");
 const lib = @import("os401b");
 
-fn hcf() noreturn {
-    while (true) {
-        asm volatile ("hlt");
-    }
-}
+const VERSION = "0.0.1";
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    hcf();
+    lib.cpu.hlt();
 }
 
 export fn _start() callconv(.C) noreturn {
     if (!lib.base_revision.is_supported()) {
-        hcf();
+        lib.cpu.hlt();
     }
 
-    kmain() catch hcf();
+    kmain() catch lib.cpu.hlt();
 
-    hcf();
+    lib.cpu.hlt();
 }
 
 pub fn kmain() !void {
-    lib.terminal.init(lib.Color.White, lib.Color.Blue) catch hcf();
-    try lib.terminal.print("Welcome to OS401b!\n\n", .{});
-    try lib.terminal.print("$ ", .{});
+    // perform initialization routines
+    try lib.term.init(lib.Color.White, lib.Color.Black);
+    try lib.idt.init();
+
+    try lib.term.print("\n", .{});
+
+    // print welcome message
+    try welcome();
+
+    // spawn a shell
+    try shell();
+}
+
+fn welcome() !void {
+    try lib.term.print("Welcome to ", .{});
+    try lib.term.colorPrint(lib.Color.BrightCyan, "OS401b v{s}!\n\n", .{VERSION});
+}
+
+// dummy shell for now
+fn shell() !void {
+    try lib.term.colorPrint(lib.Color.BrightRed, "# ", .{});
 }
