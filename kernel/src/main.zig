@@ -4,22 +4,38 @@ const lib = @import("os401b");
 const VERSION = "0.0.1";
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    hcf();
+    lib.cpu.hlt();
 }
 
 export fn _start() callconv(.C) noreturn {
     if (!lib.base_revision.is_supported()) {
-        hcf();
+        lib.cpu.hlt();
     }
 
-    kmain() catch hcf();
+    kmain() catch lib.cpu.hlt();
 
-    hcf();
+    lib.cpu.hlt();
 }
 
 pub fn kmain() !void {
+    // perform initialization routines
     try lib.term.init(lib.Color.White, lib.Color.Black);
+
+    try lib.term.print("\n", .{});
+
+    // print welcome message
+    try welcome();
+
+    // spawn a shell
+    try shell();
+}
+
+fn welcome() !void {
     try lib.term.print("Welcome to ", .{});
-    try lib.term.colorPrint(lib.Color.Cyan, "OS401b v{s}\n\n", .{VERSION});
-    try lib.term.colorPrint(lib.Color.Red, "# ", .{});
+    try lib.term.colorPrint(lib.Color.BrightCyan, "OS401b v{s}!\n\n", .{VERSION});
+}
+
+// dummy shell for now
+fn shell() !void {
+    try lib.term.colorPrint(lib.Color.BrightRed, "# ", .{});
 }

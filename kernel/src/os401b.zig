@@ -11,8 +11,10 @@ pub const Pixel = fblib.Pixel;
 pub const Color = fblib.Color;
 pub const Framebuffer = fblib.Framebuffer;
 
-pub const terminal = @import("lib/tty/terminal.zig");
-pub const TerminalWriter = terminal.TerminalWriter;
+pub const term = @import("lib/tty/terminal.zig");
+pub const TerminalWriter = term.TerminalWriter;
+
+pub const cpu = @import("lib/cpu.zig");
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 3 };
 
