@@ -42,7 +42,7 @@ pub const Color = enum(Pixel) {
 };
 
 pub const Framebuffer = struct {
-    pub export var framebuffer_request: limine.FramebufferRequest = .{};
+    pub export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
 
     pub const Error = error{
         OutOfBounds,
