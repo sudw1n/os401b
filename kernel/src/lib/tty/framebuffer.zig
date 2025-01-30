@@ -9,17 +9,32 @@ pub const Pixel = u32;
 
 /// An enumeration of RGB hex color values.
 pub const Color = enum(Pixel) {
-    Red = 0xFF0000,
-    Green = 0x00FF00,
-    Blue = 0x0000FF,
-    White = 0xFFFFFF,
-    Black = 0x000000,
-    Yellow = 0xFFFF00,
-    Cyan = 0x00FFFF,
-    Magenta = 0xFF00FF,
-    Gray = 0x808080,
-    Orange = 0xFFA500,
-    Pink = 0xFFC0CB,
+    // Dark Background Colors
+    Black = 0x1A1B26, // Base (Dark)
+    BrightBlack = 0x292E42, // Darker foreground
+
+    // Foreground (Text) Colors
+    White = 0xC0CAF5, // Primary text color
+    BrightWhite = 0xD7DAE0, // Brighter text
+
+    // Primary Colors
+    Red = 0xF7768E, // Error / Alerts
+    BrightRed = 0xFF7A93,
+
+    Green = 0x9ECE6A, // Success / OK
+    BrightGreen = 0xB9F27C,
+
+    Yellow = 0xE0AF68, // Warnings / Highlights
+    BrightYellow = 0xFAE3B0,
+
+    Blue = 0x7AA2F7, // Info / Cool elements
+    BrightBlue = 0xA9B1D6,
+
+    Magenta = 0xBB9AF7, // Purple (often for keywords)
+    BrightMagenta = 0xC678DD,
+
+    Cyan = 0x7DCFFF, // Accents / Standout elements
+    BrightCyan = 0x89DDFF,
 
     pub fn toPixel(self: Color) Pixel {
         return @as(Pixel, @intFromEnum(self));
@@ -27,7 +42,7 @@ pub const Color = enum(Pixel) {
 };
 
 pub const Framebuffer = struct {
-    pub export var framebuffer_request: limine.FramebufferRequest = .{};
+    pub export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
 
     pub const Error = error{
         OutOfBounds,

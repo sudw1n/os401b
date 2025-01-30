@@ -43,6 +43,36 @@ pub fn print(comptime fmt: []const u8, args: anytype) !void {
     try std.fmt.format(@as(TerminalWriter, undefined), fmt, args);
 }
 
+/// Write to screen with standard formatting, with the specified color
+pub fn colorPrint(color: Color, comptime fmt: []const u8, args: anytype) !void {
+    const old_fg = fg;
+
+    // set the new colour
+    fg = color;
+
+    try std.fmt.format(@as(TerminalWriter, undefined), fmt, args);
+
+    // restore the old foreground color
+    fg = old_fg;
+}
+
+/// Print a kernel loading step
+pub fn logStep(comptime fmt: []const u8, args: anytype) !void {
+    try colorPrint(Color.Blue, ">>> ", .{});
+    try print(fmt ++ "... ", args);
+}
+
+/// For printing out status of a kernel loading step
+pub fn logStepStatus(success: bool) !void {
+    try print("[  ", .{});
+    if (success) {
+        try colorPrint(Color.BrightGreen, "OK", .{});
+    } else {
+        try colorPrint(Color.BrightRed, "FAILED", .{});
+    }
+    try print("  ]\n", .{});
+}
+
 fn writeStr(bytes: []const u8) Error!void {
     for (bytes) |char| {
         switch (char) {
