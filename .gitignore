@@ -1,6 +1,6 @@
 .direnv/
 **/*zig-*
 **/*.iso
-zen/
+pluto/
 build/
 dist/
