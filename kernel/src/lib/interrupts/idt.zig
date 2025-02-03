@@ -55,11 +55,11 @@ const IDT_ENTRIES = 256;
 var handlers: [IDT_ENTRIES]InterruptDescriptor linksection(".bss") = undefined;
 
 pub fn init() !void {
-    try term.logStep("Initializing the IDT", .{});
+    try term.logStepBegin("Initializing the Interrupt Descriptor Table", .{});
     setHandlers();
     setIdtr();
     cpu.sti();
-    try term.logStepStatus(true);
+    try term.logStepEnd();
 }
 
 fn setHandlers() void {

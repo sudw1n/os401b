@@ -56,21 +56,17 @@ pub fn colorPrint(color: Color, comptime fmt: []const u8, args: anytype) !void {
     fg = old_fg;
 }
 
-/// Print a kernel loading step
-pub fn logStep(comptime fmt: []const u8, args: anytype) !void {
+/// Print a kernel loading step message
+pub fn logStepBegin(comptime fmt: []const u8, args: anytype) !void {
     try colorPrint(Color.Blue, ">>> ", .{});
     try print(fmt ++ "... ", args);
 }
 
-/// For printing out status of a kernel loading step
-pub fn logStepStatus(success: bool) !void {
-    try print("[  ", .{});
-    if (success) {
-        try colorPrint(Color.BrightGreen, "OK", .{});
-    } else {
-        try colorPrint(Color.BrightRed, "FAILED", .{});
-    }
-    try print("  ]\n", .{});
+/// For printing out end of a kernel loading step
+pub fn logStepEnd() !void {
+    try print("[", .{});
+    try colorPrint(Color.BrightGreen, "  OK  ", .{});
+    try print("]\n", .{});
 }
 
 fn writeStr(bytes: []const u8) Error!void {
