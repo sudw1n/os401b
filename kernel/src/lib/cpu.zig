@@ -5,21 +5,21 @@ pub const SystemTableRegister = packed struct {
     base: u64,
 };
 
-pub fn hlt() noreturn {
+pub inline fn hlt() noreturn {
     while (true) {
         asm volatile ("hlt");
     }
 }
 
-pub fn cli() void {
+pub inline fn cli() void {
     asm volatile ("cli");
 }
 
-pub fn sti() void {
+pub inline fn sti() void {
     asm volatile ("sti");
 }
 
-pub fn lidt(idtr: SystemTableRegister) void {
+pub inline fn lidt(idtr: SystemTableRegister) void {
     asm volatile ("lidt (%[idtr])"
         :
         : [idtr] "r" (&idtr),
