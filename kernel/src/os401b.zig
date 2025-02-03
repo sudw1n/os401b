@@ -3,6 +3,7 @@ const limine = @import("limine");
 
 const fontlib = @import("lib/tty/font.zig");
 const fblib = @import("lib/tty/framebuffer.zig");
+const gdtlib = @import("lib/gdt.zig");
 
 pub const Psf2Header = fontlib.Psf2Header;
 pub const Terminus = fontlib.Terminus;
@@ -16,6 +17,9 @@ pub const TerminalWriter = term.TerminalWriter;
 
 pub const cpu = @import("lib/cpu.zig");
 pub const idt = @import("lib/interrupts/idt.zig");
+
+pub const SegmentSelector = gdtlib.SegmentSelector;
+pub const Dpl = gdtlib.Dpl;
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 3 };
 

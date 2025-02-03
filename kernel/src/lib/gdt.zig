@@ -1,6 +1,3 @@
-const term = @import("../tty/terminal.zig");
-const cpu = @import("../cpu.zig");
-
 /// Segment selectors for the GDT
 pub const SegmentSelector = enum(u16) {
     NullDescriptor = 0x00,

@@ -2,7 +2,7 @@
 // 1. https://wiki.osdev.org/Interrupt_Descriptor_Table
 // 2. https://wiki.osdev.org/Interrupts_Tutorial
 
-const gdtlib = @import("gdt.zig");
+const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
 const term = @import("../tty/terminal.zig");
 

@@ -1,4 +1,4 @@
-const gdt = @import("interrupts/gdt.zig");
+const gdt = @import("gdt.zig");
 
 pub const SystemTableRegister = packed struct {
     limit: u16,
