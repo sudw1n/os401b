@@ -64,6 +64,9 @@ pub fn init() !void {
 
 fn setHandlers() void {
     idtSet(0, idtZero);
+    inline for (1..32) |i| {
+        idtSet(i, isrStub);
+    }
 }
 
 fn idtSet(comptime idx: usize, isr: InterruptServiceRoutine) void {
