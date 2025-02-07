@@ -16,7 +16,7 @@ pub const GateType = enum(u4) {
     Trap = 0b1111,
 };
 
-pub const InterruptServiceRoutine = *const fn () void;
+pub const InterruptServiceRoutine = *const fn () noreturn;
 
 pub const InterruptDescriptor = packed struct {
     /// offset bits 0..15
@@ -81,12 +81,15 @@ fn setIdtr() void {
     cpu.lidt(idtr);
 }
 
-fn defaultExceptionHandler() void {
+fn isrStub() noreturn {
     cpu.cli();
+    term.print("\n\nUnhandled interrupt!\n\n", .{}) catch cpu.hlt();
     cpu.hlt();
+    cpu.iret();
 }
 
-fn idtZero() void {
+fn idtZero() noreturn {
+    cpu.cli();
     term.print("\n\nDivide by zero!\n\n", .{}) catch cpu.hlt();
-    cpu.hlt();
+    cpu.iret();
 }
