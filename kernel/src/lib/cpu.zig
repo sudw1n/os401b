@@ -71,3 +71,13 @@ pub fn out(port: u16, data: anytype) void {
         else => @compileError("The `out` instruction only supports u8, u16 or u32 but found: " ++ @typeName(T)),
     };
 }
+
+pub fn rdtsc() u64 {
+    var high: u32 = 0;
+    var low: u32 = 0;
+    asm volatile ("rdtsc"
+        : [eax] "={eax}" (low),
+          [edx] "={edx}" (high),
+    );
+    return @as(u64, (@as(u64, high) << 32) | (low));
+}
