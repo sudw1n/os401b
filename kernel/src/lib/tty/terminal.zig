@@ -63,10 +63,16 @@ pub fn logStepBegin(comptime fmt: []const u8, args: anytype) !void {
 }
 
 /// For printing out end of a kernel loading step
-pub fn logStepEnd() !void {
+pub fn logStepEnd(success: bool) !void {
     try print("[", .{});
-    try colorPrint(Color.BrightGreen, "  OK  ", .{});
+    const fmt = "{s: ^6}";
+    if (success) {
+        try colorPrint(Color.BrightGreen, fmt, .{"OK"});
+    } else {
+        try colorPrint(Color.BrightRed, fmt, .{"FAIL"});
+    }
     try print("]\n", .{});
+    if (!success) return TerminalError.LogStepFail;
 }
 
 fn writeStr(bytes: []const u8) Error!void {

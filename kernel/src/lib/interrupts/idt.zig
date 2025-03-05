@@ -59,7 +59,7 @@ pub fn init() !void {
     setHandlers();
     setIdtr();
     cpu.sti();
-    try term.logStepEnd();
+    try term.logStepEnd(true);
 }
 
 fn setHandlers() void {
