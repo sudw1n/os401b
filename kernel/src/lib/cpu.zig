@@ -5,6 +5,13 @@ pub const SystemTableRegister = packed struct {
     base: u64,
 };
 
+pub const CpuidResult = struct {
+    eax: u32,
+    ebx: u32,
+    ecx: u32,
+    edx: u32,
+};
+
 pub inline fn hlt() noreturn {
     while (true) {
         asm volatile ("hlt");
@@ -80,4 +87,25 @@ pub fn rdtsc() u64 {
           [edx] "={edx}" (high),
     );
     return @as(u64, (@as(u64, high) << 32) | (low));
+}
+
+/// Calls CPUID with the given value of EAX and ECX.
+pub inline fn cpuid(eax_in: u32, ecx_in: u32) CpuidResult {
+    var eax: u32 = eax_in;
+    var ebx: u32 = 0;
+    var ecx: u32 = ecx_in;
+    var edx: u32 = 0;
+
+    asm volatile ("cpuid"
+        : [_] "+{eax}" (eax),
+          [_] "={ebx}" (ebx),
+          [_] "+{ecx}" (ecx),
+          [_] "={edx}" (edx),
+    );
+    return CpuidResult{
+        .eax = eax,
+        .ebx = ebx,
+        .ecx = ecx,
+        .edx = edx,
+    };
 }
