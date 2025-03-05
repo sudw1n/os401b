@@ -18,6 +18,8 @@ pub const TerminalWriter = term.TerminalWriter;
 pub const cpu = @import("lib/cpu.zig");
 pub const idt = @import("lib/interrupts/idt.zig");
 
+pub const apic = @import("lib/interrupts/apic.zig");
+
 pub const SegmentSelector = gdtlib.SegmentSelector;
 pub const Dpl = gdtlib.Dpl;
 

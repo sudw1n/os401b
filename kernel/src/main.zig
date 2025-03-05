@@ -1,6 +1,10 @@
 const std = @import("std");
 const lib = @import("os401b");
 
+const term = lib.term;
+const idt = lib.idt;
+const apic = lib.apic;
+
 const VERSION = "0.0.1";
 
 pub fn panic(_: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
@@ -19,10 +23,11 @@ export fn _start() callconv(.C) noreturn {
 
 pub fn kmain() !void {
     // perform initialization routines
-    try lib.term.init(lib.Color.White, lib.Color.Black);
-    try lib.idt.init();
+    try term.init(lib.Color.White, lib.Color.Black);
+    try idt.init();
+    try apic.init();
 
-    try lib.term.print("\n", .{});
+    try term.print("\n", .{});
 
     // print welcome message
     try welcome();
@@ -32,11 +37,11 @@ pub fn kmain() !void {
 }
 
 fn welcome() !void {
-    try lib.term.print("Welcome to ", .{});
-    try lib.term.colorPrint(lib.Color.BrightCyan, "OS401b v{s}!\n\n", .{VERSION});
+    try term.print("Welcome to ", .{});
+    try term.colorPrint(lib.Color.BrightCyan, "OS401b v{s}!\n\n", .{VERSION});
 }
 
 // dummy shell for now
 fn shell() !void {
-    try lib.term.colorPrint(lib.Color.BrightRed, "# ", .{});
+    try term.colorPrint(lib.Color.BrightRed, "$ ", .{});
 }

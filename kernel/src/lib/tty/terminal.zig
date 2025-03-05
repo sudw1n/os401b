@@ -6,7 +6,9 @@ const Framebuffer = fblib.Framebuffer;
 const Color = fblib.Color;
 
 pub const Error = error{ Unimplemented, FramebufferInitFailed } || fblib.Framebuffer.Error;
-const TerminalError = Error;
+const TerminalError = Error || error{
+    LogStepFail,
+};
 
 /// The underlying framebuffer
 var framebuffer: Framebuffer = undefined;
