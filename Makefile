@@ -20,8 +20,9 @@ ZIG_FLAGS                  := -Doptimize=Debug
 
 QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
-# memory, instruct the VM to boot from the CD-ROM (drive `d`) first and specify the CD-ROM ISO file
-QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE)
+# memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
+# generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
+QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2
 
 $(BUILD_DIR):
 	@mkdir $(BUILD_DIR)
@@ -41,7 +42,7 @@ $(EFI_DIR):  | $(ISO_DIR)
 # run using OVMF (UEFI)
 .PHONY: run
 run: $(OVMF_DIR)/$(OVMF_FILE) $(ISO_FILE)
-	$(QEMU) -bios $(OVMF_DIR)/$(OVMF_FILE) $(QEMU_COMMON_FLAGS)
+	$(QEMU) -bios $(OVMF_DIR)/$(OVMF_FILE) -M smm=off $(QEMU_COMMON_FLAGS)
 
 # run using legacy BIOS
 .PHONY: run-bios
