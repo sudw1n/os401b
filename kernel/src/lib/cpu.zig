@@ -89,23 +89,26 @@ pub fn rdtsc() u64 {
     return @as(u64, (@as(u64, high) << 32) | (low));
 }
 
-/// Calls CPUID with the given value of EAX and ECX.
-pub inline fn cpuid(eax_in: u32, ecx_in: u32) CpuidResult {
-    var eax: u32 = eax_in;
-    var ebx: u32 = 0;
-    var ecx: u32 = ecx_in;
-    var edx: u32 = 0;
+pub const Leaf = struct {
+    eax: u32,
+    ebx: u32,
+    ecx: u32,
+    edx: u32,
+};
 
+/// Calls CPUID with the given value of EAX and ECX.
+pub fn cpuid(leaf_id: u32, subid: u32) Leaf {
+    var eax: u32 = undefined;
+    var ebx: u32 = undefined;
+    var ecx: u32 = undefined;
+    var edx: u32 = undefined;
     asm volatile ("cpuid"
-        : [_] "+{eax}" (eax),
+        : [_] "={eax}" (eax),
           [_] "={ebx}" (ebx),
-          [_] "+{ecx}" (ecx),
+          [_] "={ecx}" (ecx),
           [_] "={edx}" (edx),
+        : [_] "{eax}" (leaf_id),
+          [_] "{ecx}" (subid),
     );
-    return CpuidResult{
-        .eax = eax,
-        .ebx = ebx,
-        .ecx = ecx,
-        .edx = edx,
-    };
+    return .{ .eax = eax, .ebx = ebx, .ecx = ecx, .edx = edx };
 }
