@@ -1,6 +1,6 @@
 .direnv/
 **/*zig-*
 **/*.iso
-pluto/
 build/
 dist/
+references/
