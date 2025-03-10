@@ -5,8 +5,8 @@ const fblib = @import("framebuffer.zig");
 const Framebuffer = fblib.Framebuffer;
 const Color = fblib.Color;
 
-pub const Error = error{ Unimplemented, FramebufferInitFailed } || fblib.Framebuffer.Error;
-const TerminalError = Error || error{
+const Error = error{ Unimplemented, FramebufferInitFailed } || fblib.Framebuffer.Error;
+pub const TerminalError = Error || error{
     LogStepFail,
 };
 
@@ -28,8 +28,8 @@ var cursor: usize = undefined;
 const TAB_WIDTH = 4;
 
 /// Initialize the terminal
-pub fn init(foreground_color: Color, background_color: Color) Error!void {
-    framebuffer = Framebuffer.init() orelse return Error.FramebufferInitFailed;
+pub fn init(foreground_color: Color, background_color: Color) TerminalError!void {
+    framebuffer = Framebuffer.init() orelse return TerminalError.FramebufferInitFailed;
     framebuffer.fill(background_color);
     // the terminal doesn't care about pixels, it cares about rows and columns of text, so
     // here we translate the pixel dimensions of the framebuffer into text dimensions
@@ -77,7 +77,7 @@ pub fn logStepEnd(success: bool) !void {
     if (!success) return TerminalError.LogStepFail;
 }
 
-fn writeStr(bytes: []const u8) Error!void {
+fn writeStr(bytes: []const u8) TerminalError!void {
     for (bytes) |char| {
         switch (char) {
             '\r', '\n' => try newLine(),
@@ -87,7 +87,7 @@ fn writeStr(bytes: []const u8) Error!void {
     }
 }
 
-fn writeChar(char: u8) Error!void {
+fn writeChar(char: u8) TerminalError!void {
     // if we've reached end of the line, move to next row
     if (cursor >= (width * height) - 1) {
         framebuffer.scroll(bg);
@@ -106,7 +106,7 @@ fn writeChar(char: u8) Error!void {
     cursor += 1;
 }
 
-fn newLine() Error!void {
+fn newLine() TerminalError!void {
     while (true) {
         // add additional spaces to fill the row
         try writeChar(' ');
@@ -116,7 +116,7 @@ fn newLine() Error!void {
     }
 }
 
-fn tab() Error!void {
+fn tab() TerminalError!void {
     while (true) {
         // add additional spaces to fill the tab character
         try writeChar(' ');
