@@ -32,9 +32,9 @@ pub inline fn iret() noreturn {
 }
 
 pub fn lidt(idtr: SystemTableRegister) void {
-    asm volatile ("lidt (%[idtr])"
+    asm volatile ("lidt %[idtr]"
         :
-        : [idtr] "r" (&idtr),
+        : [idtr] "m" (&idtr),
     );
 }
 
