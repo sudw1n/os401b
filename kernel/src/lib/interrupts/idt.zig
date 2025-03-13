@@ -2,6 +2,7 @@
 // 1. https://wiki.osdev.org/Interrupt_Descriptor_Table
 // 2. https://wiki.osdev.org/Interrupts_Tutorial
 
+const std = @import("std");
 const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
 const term = @import("../tty/terminal.zig");
@@ -9,6 +10,9 @@ const term = @import("../tty/terminal.zig");
 const SegmentSelector = gdtlib.SegmentSelector;
 const Dpl = gdtlib.Dpl;
 const SystemTableRegister = cpu.SystemTableRegister;
+const InterruptFrame = cpu.InterruptFrame;
+
+const CallingConvention = std.builtin.CallingConvention;
 
 /// Interrupt Descriptor Gate Type
 pub const GateType = enum(u4) {
@@ -72,20 +76,6 @@ pub fn init() !void {
     try term.logStepEnd(true);
 }
 
-fn setHandlers() void {
-    idtSet(0, idtZero);
-    inline for (1..32) |i| {
-        idtSet(i, isrStub);
-    }
-}
-
-fn idtSet(comptime idx: usize, isr: InterruptServiceRoutine) void {
-    if (comptime idx > IDT_ENTRIES) {
-        @compileError("Overflow when setting IDT");
-    }
-    handlers[idx] = InterruptDescriptor.init(isr);
-}
-
 fn setIdtr() void {
     const idtr = SystemTableRegister{
         .base = @intFromPtr(&handlers[0]),
@@ -95,15 +85,142 @@ fn setIdtr() void {
     cpu.lidt(idtr);
 }
 
-fn isrStub() noreturn {
-    cpu.cli();
-    term.print("\n\nUnhandled interrupt!\n\n", .{}) catch cpu.hlt();
-    cpu.hlt();
-    cpu.iret();
+fn setHandlers() void {
+    idtSet(0, idt0);
+    idtSet(1, idt1);
+    idtSet(13, idt13);
 }
 
-fn idtZero() noreturn {
-    cpu.cli();
-    term.print("\n\nDivide by zero!\n\n", .{}) catch cpu.hlt();
-    cpu.iret();
+fn idtSet(comptime idx: usize, isr: InterruptServiceRoutine) void {
+    handlers[idx] = InterruptDescriptor.init(isr);
+}
+
+fn idt0() callconv(CallingConvention.Naked) noreturn {
+    // no error code == 0x00
+    asm volatile (
+        \\pushq $0
+    );
+    // the vector number
+    asm volatile (
+        \\pushq $0
+    );
+    asm volatile (
+        \\jmp interruptCommon
+    );
+}
+
+fn idt1() callconv(CallingConvention.Naked) noreturn {
+    // no error code == 0x00
+    asm volatile (
+        \\pushq $0
+    );
+    // the vector number
+    asm volatile (
+        \\pushq $1
+    );
+    asm volatile (
+        \\jmp interruptCommon
+    );
+}
+
+fn idt13() callconv(CallingConvention.Naked) noreturn {
+    // vector 13(#GP) does push an error code so we won't.
+    // Just push the vector number.
+    asm volatile (
+        \\pushq $13
+    );
+    asm volatile (
+        \\jmp interruptCommon
+    );
+}
+
+export fn interruptCommon() callconv(.Naked) void {
+    // save general purpose registers
+    asm volatile (
+        \\pushq   %%rax
+        \\pushq   %%rbx
+        \\pushq   %%rcx
+        \\pushq   %%rdx
+        \\pushq   %%rbp
+        \\pushq   %%rsi
+        \\pushq   %%rdi
+        \\pushq   %%r8
+        \\pushq   %%r9
+        \\pushq   %%r10
+        \\pushq   %%r11
+        \\pushq   %%r12
+        \\pushq   %%r13
+        \\pushq   %%r14
+        \\pushq   %%r15
+    );
+    // push segment registers
+    asm volatile (
+        \\mov %%ds, %%rax
+        \\pushq %%rax
+        \\mov %%es, %%rax
+        \\pushq %%rax
+    );
+    // set segment to run in
+    asm volatile (
+        \\mov %[kernel_data], %%rax
+        \\mov %%ax, %%es
+        \\mov %%ax, %%ds
+        :
+        : [kernel_data] "i" (SegmentSelector.KernelData),
+    );
+    // handle the interrupt and pass the current stack pointer as a interrupt frame
+    asm volatile (
+        \\mov %%rsp, %%rdi
+        \\call interruptDispatch
+    );
+
+    // restore segment registers
+    asm volatile (
+        \\pop %rax
+        \\mov %rax, %%es
+        \\pop %%rax
+        \\mov %%rax, %%ds
+    );
+
+    // Restore general purpose registers
+    asm volatile (
+        \\popq   %r15
+        \\popq   %r14
+        \\popq   %r13
+        \\popq   %r12
+        \\popq   %r11
+        \\popq   %r10
+        \\popq   %r9
+        \\popq   %r8
+        \\popq   %rdi
+        \\popq   %rsi
+        \\popq   %rbp
+        \\popq   %rdx
+        \\popq   %rcx
+        \\popq   %rbx
+        \\popq   %rax
+    );
+
+    // remove the vector number + error code
+    asm volatile (
+        \\addq   $0x10, %%rsp
+    );
+    // return from interrupt
+    asm volatile ("iretq");
+}
+
+export fn interruptDispatch(frame: *InterruptFrame) void {
+    switch (frame.vector_number) {
+        0 => {
+            term.consolePrint("divide by zero\n", .{}) catch cpu.hlt();
+            @panic("reached unhandled error");
+        },
+        1 => term.consolePrint("debug\n", .{}) catch cpu.hlt(),
+        13 => term.consolePrint("general protection fault\n", .{}) catch cpu.hlt(),
+        14 => term.consolePrint("page fault\n", .{}) catch cpu.hlt(),
+        else => {
+            term.consolePrint("unexpected interrupt\n", .{}) catch {};
+            cpu.hlt();
+        },
+    }
 }
