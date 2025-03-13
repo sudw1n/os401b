@@ -4,6 +4,8 @@ const font = @import("font.zig");
 
 const Terminus = font.Terminus;
 
+const log = std.log.scoped(.framebuffer);
+
 /// A pixel value
 pub const Pixel = u32;
 
@@ -70,6 +72,7 @@ pub const Framebuffer = struct {
     pub fn init() Error!Framebuffer {
         if (framebuffer_request.response) |framebuffer_response| {
             if (framebuffer_response.framebuffer_count < 1) {
+                log.err("framebuffer count == {d} (< 1)", .{framebuffer_response.framebuffer_count});
                 return Error.InvalidFramebuffer;
             }
             const framebuffer = framebuffer_response.framebuffers()[0];
@@ -86,6 +89,7 @@ pub const Framebuffer = struct {
                 .font = Terminus.init(),
             };
         }
+        log.err("didn't receive a response to framebuffer request from the bootloader", .{});
         return Error.InvalidFramebuffer;
     }
 
@@ -136,6 +140,7 @@ pub const Framebuffer = struct {
     fn getOffset(self: Framebuffer, x: usize, y: usize) Error!usize {
         const offset = (y * self.width) + x;
         if (offset >= self.buffer.len) {
+            log.err("out of bounds: x={d}, y={d}, offset={d}", .{ x, y, offset });
             return Error.OutOfBounds;
         }
         return offset;

@@ -5,7 +5,8 @@
 const std = @import("std");
 const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
-const term = @import("../tty/terminal.zig");
+
+const log = std.log.scoped(.idt);
 
 const SegmentSelector = gdtlib.SegmentSelector;
 const Dpl = gdtlib.Dpl;
@@ -68,12 +69,10 @@ const IDT_ENTRIES = 256;
 
 var handlers: [IDT_ENTRIES]InterruptDescriptor linksection(".bss") = undefined;
 
-pub fn init() !void {
-    try term.logStepBegin("Initializing the Interrupt Descriptor Table", .{});
+pub fn init() void {
     setHandlers();
     setIdtr();
     cpu.sti();
-    try term.logStepEnd(true);
 }
 
 fn setIdtr() void {
@@ -210,17 +209,15 @@ export fn interruptCommon() callconv(.Naked) void {
 }
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
+    log.info("Received interrupt {}", .{frame.vector_number});
     switch (frame.vector_number) {
         0 => {
-            term.consolePrint("divide by zero\n", .{}) catch cpu.hlt();
-            @panic("reached unhandled error");
+            log.debug("divide by zero", .{});
+            @panic("reached unrecoverable exception");
         },
-        1 => term.consolePrint("debug\n", .{}) catch cpu.hlt(),
-        13 => term.consolePrint("general protection fault\n", .{}) catch cpu.hlt(),
-        14 => term.consolePrint("page fault\n", .{}) catch cpu.hlt(),
-        else => {
-            term.consolePrint("unexpected interrupt\n", .{}) catch {};
-            cpu.hlt();
-        },
+        1 => log.debug("debug interrupt", .{}),
+        13 => log.debug("general protection fault", .{}),
+        14 => log.debug("page fault", .{}),
+        else => @panic("unhandled interrupt"),
     }
 }

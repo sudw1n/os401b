@@ -1,10 +1,7 @@
 const std = @import("std");
 
 const fblib = @import("framebuffer.zig");
-const seriallib = @import("serial.zig");
 
-const SerialWriter = seriallib.SerialWriter;
-const SerialError = seriallib.SerialError;
 const Framebuffer = fblib.Framebuffer;
 const Color = fblib.Color;
 
@@ -14,11 +11,10 @@ pub const TerminalError = error{
     PrintError,
 };
 
-pub const TtyError = TerminalError || Framebuffer.Error || SerialError;
+pub const TtyError = TerminalError || Framebuffer.Error;
 
 /// The underlying framebuffer
 var framebuffer: Framebuffer = undefined;
-var serial_writer: SerialWriter = undefined;
 /// The width of the terminal
 var width: usize = undefined;
 /// The height of the terminal
@@ -34,10 +30,11 @@ var cursor: usize = undefined;
 // how many spaces a tab character should be replaced with
 const TAB_WIDTH = 4;
 
+var writer: TerminalWriter = TerminalWriter{};
+
 /// Initialize the terminal
 pub fn init(foreground_color: Color, background_color: Color) TtyError!void {
     framebuffer = try Framebuffer.init();
-    serial_writer = try SerialWriter.init();
     framebuffer.fill(background_color);
     // the terminal doesn't care about pixels, it cares about rows and columns of text, so
     // here we translate the pixel dimensions of the framebuffer into text dimensions
@@ -50,12 +47,7 @@ pub fn init(foreground_color: Color, background_color: Color) TtyError!void {
 
 /// Write to screen with standard formatting
 pub fn print(comptime fmt: []const u8, args: anytype) TtyError!void {
-    std.fmt.format(@as(TerminalWriter, undefined), fmt, args) catch return TtyError.PrintError;
-}
-
-/// Write to console with standard formatting
-pub fn consolePrint(comptime fmt: []const u8, args: anytype) TtyError!void {
-    try serial_writer.print(fmt, args);
+    std.fmt.format(writer, fmt, args) catch return TtyError.PrintError;
 }
 
 /// Write to screen with standard formatting, with the specified color

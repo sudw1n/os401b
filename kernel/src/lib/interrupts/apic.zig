@@ -1,12 +1,18 @@
+const std = @import("std");
 const cpu = @import("../cpu.zig");
 const term = @import("../tty/terminal.zig");
 
+const log = std.log.scoped(.apic);
+
 const Leaf = cpu.Leaf;
 
-pub fn init() !void {
-    try term.logStepBegin("Detecting APIC", .{});
-    // TODO: if this errors, we only get error.LogStepFail which is not very informative
-    try term.logStepEnd(checkApic());
+pub fn init() void {
+    log.info("checking APIC support", .{});
+    if (!checkApic()) {
+        log.err("APIC not supported", .{});
+        return;
+    }
+    log.info("APIC seems to be supported", .{});
 }
 
 pub fn checkApic() bool {

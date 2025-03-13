@@ -1,6 +1,23 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
 
+var serial: SerialWriter = undefined;
+
+pub fn init() SerialError!void {
+    serial = try SerialWriter.init();
+}
+
+pub fn log(
+    comptime message_level: std.log.Level,
+    comptime scope: @TypeOf(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const scope_prefix = "(" ++ @tagName(scope) ++ "): ";
+    const prefix = "[" ++ comptime message_level.asText() ++ "] " ++ scope_prefix;
+    serial.print(prefix ++ format ++ "\n", args) catch return;
+}
+
 pub const SerialError = error{
     InvalidSerialDevice,
     SerialPrint,
