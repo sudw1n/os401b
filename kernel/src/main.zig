@@ -64,9 +64,6 @@ pub fn kmain() Error!void {
     // spawn a shell
     log.info("spawning the shell", .{});
     try shell();
-
-    log.warn("about to trigger an interrupt", .{});
-    asm volatile ("int $0");
 }
 
 fn welcome() Error!void {
