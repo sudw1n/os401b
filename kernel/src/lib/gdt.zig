@@ -1,3 +1,4 @@
+// TODO: setup a GDT yourself and remove the limine bootloader defaults
 /// Segment selectors for the GDT
 pub const SegmentSelector = enum(u16) {
     NullDescriptor = 0x00,
