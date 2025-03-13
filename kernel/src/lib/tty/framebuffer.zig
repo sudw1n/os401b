@@ -46,6 +46,8 @@ pub const Framebuffer = struct {
 
     pub const Error = error{
         OutOfBounds,
+        /// The underlying framebuffer is invalid
+        InvalidFramebuffer,
     };
 
     /// The underlying memory seen as an array of Pixels
@@ -65,10 +67,10 @@ pub const Framebuffer = struct {
     /// The font being used for drawing glyphs in the framebuffer
     font: Terminus,
 
-    pub fn init() ?Framebuffer {
+    pub fn init() Error!Framebuffer {
         if (framebuffer_request.response) |framebuffer_response| {
             if (framebuffer_response.framebuffer_count < 1) {
-                return null;
+                return Error.InvalidFramebuffer;
             }
             const framebuffer = framebuffer_response.framebuffers()[0];
             // here we need to use the pitch because we need to include the actual allocated buffer
@@ -84,7 +86,7 @@ pub const Framebuffer = struct {
                 .font = Terminus.init(),
             };
         }
-        return null;
+        return Error.InvalidFramebuffer;
     }
 
     pub fn fill(self: Framebuffer, color: Color) void {

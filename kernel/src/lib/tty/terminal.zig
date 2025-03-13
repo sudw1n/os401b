@@ -1,17 +1,24 @@
 const std = @import("std");
 
 const fblib = @import("framebuffer.zig");
+const seriallib = @import("serial.zig");
 
+const SerialWriter = seriallib.SerialWriter;
+const SerialError = seriallib.SerialError;
 const Framebuffer = fblib.Framebuffer;
 const Color = fblib.Color;
 
-const Error = error{ Unimplemented, FramebufferInitFailed } || fblib.Framebuffer.Error;
-pub const TerminalError = Error || error{
+pub const TerminalError = error{
     LogStepFail,
+    Unimplemented,
+    PrintError,
 };
+
+pub const TtyError = TerminalError || Framebuffer.Error || SerialError;
 
 /// The underlying framebuffer
 var framebuffer: Framebuffer = undefined;
+var serial_writer: SerialWriter = undefined;
 /// The width of the terminal
 var width: usize = undefined;
 /// The height of the terminal
@@ -28,8 +35,9 @@ var cursor: usize = undefined;
 const TAB_WIDTH = 4;
 
 /// Initialize the terminal
-pub fn init(foreground_color: Color, background_color: Color) TerminalError!void {
-    framebuffer = Framebuffer.init() orelse return TerminalError.FramebufferInitFailed;
+pub fn init(foreground_color: Color, background_color: Color) TtyError!void {
+    framebuffer = try Framebuffer.init();
+    serial_writer = try SerialWriter.init();
     framebuffer.fill(background_color);
     // the terminal doesn't care about pixels, it cares about rows and columns of text, so
     // here we translate the pixel dimensions of the framebuffer into text dimensions
@@ -41,31 +49,36 @@ pub fn init(foreground_color: Color, background_color: Color) TerminalError!void
 }
 
 /// Write to screen with standard formatting
-pub fn print(comptime fmt: []const u8, args: anytype) !void {
-    try std.fmt.format(@as(TerminalWriter, undefined), fmt, args);
+pub fn print(comptime fmt: []const u8, args: anytype) TtyError!void {
+    std.fmt.format(@as(TerminalWriter, undefined), fmt, args) catch return TtyError.PrintError;
+}
+
+/// Write to console with standard formatting
+pub fn consolePrint(comptime fmt: []const u8, args: anytype) TtyError!void {
+    try serial_writer.print(fmt, args);
 }
 
 /// Write to screen with standard formatting, with the specified color
-pub fn colorPrint(color: Color, comptime fmt: []const u8, args: anytype) !void {
+pub fn colorPrint(color: Color, comptime fmt: []const u8, args: anytype) TtyError!void {
     const old_fg = fg;
 
     // set the new colour
     fg = color;
 
-    try std.fmt.format(@as(TerminalWriter, undefined), fmt, args);
+    try print(fmt, args);
 
     // restore the old foreground color
     fg = old_fg;
 }
 
 /// Print a kernel loading step message
-pub fn logStepBegin(comptime fmt: []const u8, args: anytype) !void {
+pub fn logStepBegin(comptime fmt: []const u8, args: anytype) TtyError!void {
     try colorPrint(Color.Blue, ">>> ", .{});
     try print(fmt ++ "... ", args);
 }
 
 /// For printing out end of a kernel loading step
-pub fn logStepEnd(success: bool) !void {
+pub fn logStepEnd(success: bool) TtyError!void {
     try print("[", .{});
     const fmt = "{s: ^6}";
     if (success) {
@@ -74,10 +87,10 @@ pub fn logStepEnd(success: bool) !void {
         try colorPrint(Color.BrightRed, fmt, .{"FAIL"});
     }
     try print("]\n", .{});
-    if (!success) return TerminalError.LogStepFail;
+    if (!success) return TtyError.LogStepFail;
 }
 
-fn writeStr(bytes: []const u8) TerminalError!void {
+fn writeStr(bytes: []const u8) TtyError!void {
     for (bytes) |char| {
         switch (char) {
             '\r', '\n' => try newLine(),
@@ -87,7 +100,7 @@ fn writeStr(bytes: []const u8) TerminalError!void {
     }
 }
 
-fn writeChar(char: u8) TerminalError!void {
+fn writeChar(char: u8) TtyError!void {
     // if we've reached end of the line, move to next row
     if (cursor >= (width * height) - 1) {
         framebuffer.scroll(bg);
@@ -106,7 +119,7 @@ fn writeChar(char: u8) TerminalError!void {
     cursor += 1;
 }
 
-fn newLine() TerminalError!void {
+fn newLine() TtyError!void {
     while (true) {
         // add additional spaces to fill the row
         try writeChar(' ');
@@ -116,7 +129,7 @@ fn newLine() TerminalError!void {
     }
 }
 
-fn tab() TerminalError!void {
+fn tab() TtyError!void {
     while (true) {
         // add additional spaces to fill the tab character
         try writeChar(' ');
@@ -129,24 +142,24 @@ fn tab() TerminalError!void {
 /// Writer interface for the terminal
 pub const TerminalWriter = struct {
     const Self = @This();
-    pub const Error = TerminalError;
+    pub const Error = TtyError;
 
-    pub fn write(_: Self, bytes: []const u8) !usize {
+    pub fn write(_: Self, bytes: []const u8) Error!usize {
         try writeStr(bytes);
         return bytes.len;
     }
 
-    pub fn writeByte(self: Self, byte: u8) !void {
+    pub fn writeByte(self: Self, byte: u8) Error!void {
         _ = try self.write(&.{byte});
     }
 
-    pub fn writeBytesNTimes(self: Self, bytes: []const u8, n: usize) !void {
+    pub fn writeBytesNTimes(self: Self, bytes: []const u8, n: usize) Error!void {
         for (0..n) |_| {
             _ = try self.write(bytes);
         }
     }
 
-    pub fn writeAll(self: Self, bytes: []const u8) !void {
+    pub fn writeAll(self: Self, bytes: []const u8) Error!void {
         _ = try self.write(bytes);
     }
 };

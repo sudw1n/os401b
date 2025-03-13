@@ -32,7 +32,7 @@ export fn _start() callconv(.C) noreturn {
 
     kmain() catch |err| {
         const writer = lib.SerialWriter.init() catch cpu.hlt();
-        writer.print("Kernel terminated with `{any}`\n", .{err}) catch cpu.hlt();
+        writer.print("Kernel terminated with `{any}`\n", .{err}) catch {};
     };
 
     cpu.hlt();

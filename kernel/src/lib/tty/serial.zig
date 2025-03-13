@@ -2,7 +2,8 @@ const std = @import("std");
 const cpu = @import("../cpu.zig");
 
 pub const SerialError = error{
-    FaultySerial,
+    InvalidSerialDevice,
+    SerialPrint,
 };
 
 pub const SerialWriter = struct {
@@ -25,7 +26,7 @@ pub const SerialWriter = struct {
 
         cpu.out(PORT + 0, @as(u8, 0xAE)); // Send a test byte
         if (cpu.in(u8, PORT + 0) != 0xAE) {
-            return error.FaultySerial;
+            return SerialError.InvalidSerialDevice;
         }
 
         // If serial is not faulty set it in normal operation mode:
@@ -35,26 +36,26 @@ pub const SerialWriter = struct {
         return Self{};
     }
 
-    pub fn print(self: Self, comptime fmt: []const u8, args: anytype) !void {
-        try std.fmt.format(self, fmt, args);
+    pub fn print(self: Self, comptime fmt: []const u8, args: anytype) Error!void {
+        std.fmt.format(self, fmt, args) catch return Error.SerialPrint;
     }
 
-    pub fn write(_: Self, bytes: []const u8) !usize {
+    pub fn write(_: Self, bytes: []const u8) Error!usize {
         writeStr(bytes);
         return bytes.len;
     }
 
-    pub fn writeByte(self: Self, byte: u8) !void {
+    pub fn writeByte(self: Self, byte: u8) Error!void {
         _ = try self.write(&.{byte});
     }
 
-    pub fn writeBytesNTimes(self: Self, bytes: []const u8, n: usize) !void {
+    pub fn writeBytesNTimes(self: Self, bytes: []const u8, n: usize) Error!void {
         for (0..n) |_| {
             _ = try self.write(bytes);
         }
     }
 
-    pub fn writeAll(self: Self, bytes: []const u8) !void {
+    pub fn writeAll(self: Self, bytes: []const u8) Error!void {
         _ = try self.write(bytes);
     }
 
