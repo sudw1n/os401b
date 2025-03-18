@@ -53,7 +53,7 @@ run-bios: $(ISO_FILE)
 .PHONY: debug
 debug: $(ISO_FILE)
 	@echo "Starting QEMU..."
-	$(QEMU) $(QEMU_COMMON_FLAGS) -d int -no-reboot -no-shutdown -S -s &
+	$(QEMU) $(QEMU_COMMON_FLAGS) -no-reboot -no-shutdown -S -s &
 	@sleep 1
 	@echo "Launching GDB..."
 	cgdb -ex "target remote :1234" \
