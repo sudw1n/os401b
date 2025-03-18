@@ -13,9 +13,10 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    const scope_prefix = "(" ++ @tagName(scope) ++ "): ";
+    const scope_prefix = if (scope == .none) "" else "(" ++ @tagName(scope) ++ "): ";
     const prefix = "[" ++ comptime message_level.asText() ++ "] " ++ scope_prefix;
-    serial.print(prefix ++ format ++ "\n", args) catch return;
+    const fmt = if (message_level == .debug) format else prefix ++ format;
+    serial.print(fmt ++ "\n", args) catch return;
 }
 
 pub const SerialError = error{

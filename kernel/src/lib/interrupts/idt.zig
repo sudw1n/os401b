@@ -1,6 +1,10 @@
 // knowledge sources:
 // 1. https://wiki.osdev.org/Interrupt_Descriptor_Table
 // 2. https://wiki.osdev.org/Interrupts_Tutorial
+// 3. https://github.com/dreamportdev/Osdev-Notes
+//
+// The implementation is mostly based from:
+// https://codeberg.org/loup-os/kernel/
 
 const std = @import("std");
 const gdtlib = @import("../gdt.zig");
@@ -14,6 +18,7 @@ const SystemTableRegister = cpu.SystemTableRegister;
 const InterruptFrame = cpu.InterruptFrame;
 
 const CallingConvention = std.builtin.CallingConvention;
+const Exception = cpu.Exception;
 
 /// Interrupt Descriptor Gate Type
 pub const GateType = enum(u4) {
@@ -210,14 +215,17 @@ export fn interruptCommon() callconv(.Naked) void {
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
     log.info("Received interrupt {}", .{frame.vector_number});
-    switch (frame.vector_number) {
-        0 => {
-            log.debug("divide by zero", .{});
-            @panic("reached unrecoverable exception");
+
+    const panicMsg = switch (Exception.is(frame.vector_number)) {
+        true => blk: {
+            const exception: Exception = @enumFromInt(frame.vector_number);
+            log.err("Exception: {s}", .{@tagName(exception)});
+            break :blk "Reached unrecoverable exception";
         },
-        1 => log.debug("debug interrupt", .{}),
-        13 => log.debug("general protection fault", .{}),
-        14 => log.debug("page fault", .{}),
-        else => @panic("unhandled interrupt"),
-    }
+        false => "unhandled interrupt",
+    };
+
+    const cleanLog = std.log.scoped(.none);
+    cleanLog.debug("{}", .{frame});
+    @panic(panicMsg);
 }

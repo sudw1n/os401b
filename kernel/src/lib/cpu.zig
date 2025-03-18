@@ -69,8 +69,167 @@ pub const InterruptFrame = packed struct {
     /// Stack Segment
     ss: u64,
 
+    /// Custom formatter that prints the register dump.
+    pub fn format(value: InterruptFrame, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("ES: {x:0>4}  DS: {x:0>4}\n" ++
+            "R15: {x:0>16} R14: {x:0>16} R13: {x:0>16}\n" ++
+            "R12: {x:0>16} R11: {x:0>16} R10: {x:0>16}\n" ++
+            "R9 : {x:0>16} R8 : {x:0>16} RDI: {x:0>16}\n" ++
+            "RSI: {x:0>16} RBP: {x:0>16} RDX: {x:0>16}\n" ++
+            "RCX: {x:0>16} RBX: {x:0>16} RAX: {x:0>16}\n" ++
+            "CS: {x:0>4} RIP: {x:0>16}\n" ++
+            "SS: {x:0>4} RSP: {x:0>16}\n", .{
+            value.es,
+            value.ds,
+            value.r15,
+            value.r14,
+            value.r13,
+            value.r12,
+            value.r11,
+            value.r10,
+            value.r9,
+            value.r8,
+            value.rdi,
+            value.rsi,
+            value.rbp,
+            value.rdx,
+            value.rcx,
+            value.rbx,
+            value.rax,
+            value.cs,
+            value.rip,
+            value.ss,
+            value.rsp,
+        });
+        try writer.print("{}", .{value.rflags});
+        if (Exception.is(value.vector_number)) {
+            const exception: Exception = @enumFromInt(value.vector_number);
+            if (exception.hasErrorCode()) {
+                try value.dissectErrorCode(writer);
+            }
+        }
+    }
+    fn dissectErrorCode(self: InterruptFrame, writer: anytype) !void {
+        const error_code = self.error_code;
+        const exception: Exception = @enumFromInt(self.vector_number);
+        try writer.print("Error code: 0x{x:0>16}", .{error_code});
+        if (exception.zeroErrorCode()) {
+            return;
+        }
+        try writer.print("Error code bits:", .{});
+        if (exception == Exception.PF) {
+            // If set, means all the page table entries were present,
+            // but translation failed due to a protection violation.
+            // If cleared, a page table entry was not present.
+            try writer.print("  Present: {}", .{(error_code & 0b1) != 0});
+            // If set, page fault was triggered by a write attempt.
+            // Cleared if it was a read attempt.
+            try writer.print("  Write: {}", .{(error_code & 0b10) != 0});
+            // Set if the CPU was in user mode (CPL = 3).
+            try writer.print("  User: {}", .{(error_code & 0b100) != 0});
+            // If set, means a reserved bit was set in a page table entry.
+            // Best to walk the page tables manually and see what’s happening.
+            try writer.print("  Reserved: {}", .{(error_code & 0b1000) != 0});
+            // If NX (No-Execute) is enabled in EFER, this bit can be set.
+            // If set the page fault was caused by trying to fetch
+            // an instruction from an NX page.
+            try writer.print("  Instruction fetch: {}", .{(error_code & 0b10000) != 0});
+        } else {
+            // If set, means it was a hardware interrupt.
+            // Cleared for software interrupts.
+            try writer.print("  External: {}", .{(error_code & 0b1) != 0});
+            // Set if this error code refers to the IDT.
+            // If cleared it refers to the GDT or LDT (mostly unused in long mode).
+            try writer.print("  IDT: {}", .{(error_code & 0b10) != 0});
+            // Set if the error code refers to the LDT, cleared if referring to the GDT.
+            try writer.print("  Table Index: {}", .{(error_code & 0b100) != 0});
+            // The index into the table this error code refers to.
+            // This can be seen as a byte offset into the table,
+            // much like a GDT selector would.
+            try writer.print("  Index: 0x{x:0>16}", .{(error_code >> 3)});
+        }
+    }
 };
 
+/// x86 Exceptions.
+///
+/// The first 32 entries in the IDT are reserved for exceptions,
+/// which this enum represents.
+pub const Exception = enum(u8) {
+    /// Divide by Zero Error
+    DE = 0,
+    /// Debug
+    DB = 1,
+
+    // 2 is Non-Maskable Interrupt, which we don't consider an exception
+
+    /// Breakpoint
+    BP = 3,
+    /// Overflow
+    OF = 4,
+    /// Bound Range Exceeded
+    BR = 5,
+    /// Invalid Opcode
+    UD = 6,
+    /// Device Not Available
+    NM = 7,
+    /// Double Fault
+    DF = 8,
+
+    // 9 is unused; was x87 Segment Overrun
+
+    /// Invalid TSS
+    TS = 10,
+    /// Segment Not Present
+    NP = 11,
+    /// Stack-Segment Fault
+    SS = 12,
+    /// General Protection Fault
+    GP = 13,
+    /// Page Fault
+    PF = 14,
+
+    // 15 is currently unused
+
+    /// x87 FPU Error
+    MF = 16,
+    /// Alignment Check
+    AC = 17,
+    /// Machine Check
+    MC = 18,
+    /// SIMD (SSE/AVX) Error
+    XF = 19,
+
+    // 20-31 currently unused
+
+    /// Is the interrupt an exception/
+    pub inline fn is(interrupt: u64) bool {
+        return switch (interrupt) {
+            0, 1, 3...8, 10...14, 16...19 => true,
+            else => false,
+        };
+    }
+
+    /// Has the exception an error code?
+    pub inline fn hasErrorCode(self: Exception) bool {
+        return switch (self) {
+            .DF, .TS, .NP, .SS, .GP, .PF, .AC => true,
+            else => false,
+        };
+    }
+
+    /// Does the exception have an error code of always zero?
+    pub inline fn zeroErrorCode(self: Exception) bool {
+        return switch (self) {
+            .DF, .AC => true,
+            else => false,
+        };
+    }
+};
+
+/// Tell the CPU to stop fetching instructions.
 pub inline fn hlt() noreturn {
     while (true) {
         asm volatile ("hlt");
@@ -221,6 +380,38 @@ pub const RFLAGS = packed struct(u64) {
     id: bool,
     /// Reserved
     res5: u42,
+
+    /// Custom formatter for RFLAGS.
+    pub fn format(value: RFLAGS, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        // Convert the packed RFLAGS into a raw u64 value.
+        const raw: u64 = @bitCast(value);
+        try writer.print("RFLAGS: 0x{x:0>16}\n", .{raw});
+        try writer.print("  CF: {s}  PF: {s}  AF: {s}  ZF: {s}  SF: {s}\n", .{
+            if (value.cf) "1" else "0",
+            if (value.pf) "1" else "0",
+            if (value.af) "1" else "0",
+            if (value.zf) "1" else "0",
+            if (value.sf) "1" else "0",
+        });
+        try writer.print("  TF: {s}  IF: {s}  DF: {s}  OF: {s}  IOPL: 0b{b}\n", .{
+            if (value.tf) "1" else "0",
+            if (value.@"if") "1" else "0",
+            if (value.df) "1" else "0",
+            if (value.of) "1" else "0",
+            value.iopl,
+        });
+        try writer.print("  NT: {s}  RF: {s}  VM: {s}  AC: {s}  VIF: {s}  VIP: {s}  ID: {s}\n", .{
+            if (value.nt) "1" else "0",
+            if (value.rf) "1" else "0",
+            if (value.vm) "1" else "0",
+            if (value.ac) "1" else "0",
+            if (value.vif) "1" else "0",
+            if (value.vip) "1" else "0",
+            if (value.id) "1" else "0",
+        });
+    }
 };
 
 /// Get RFLAGS
