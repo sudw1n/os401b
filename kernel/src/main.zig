@@ -30,8 +30,8 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, ret_
 }
 
 export fn _start() noreturn {
-    if (!lib.base_revision.is_supported()) {
-        cpu.hlt();
+    if (!lib.base_revision.isSupported()) {
+        @panic("Base revision not supported");
     }
 
     kmain() catch {};

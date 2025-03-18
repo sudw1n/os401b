@@ -20,7 +20,17 @@ pub fn build(b: *std.Build) void {
 
     const target = b.resolveTargetQuery(target_query);
     const optimize = b.standardOptimizeOption(.{});
-    const limine = b.dependency("limine", .{});
+    const limine = b.dependency("limine_zig", .{
+        // The API revision of the Limine Boot Protocol to use, if not provided
+        // it defaults to 0. Newer revisions may change the behavior of the bootloader.
+        .api_revision = 3,
+        // Whether to allow using deprecated features of the Limine Boot Protocol.
+        // If set to false, the build will fail if deprecated features are used.
+        .allow_deprecated = false,
+        // Whether to expose pointers in the API. When set to true, any field
+        // that is a pointer will be exposed as a raw address instead.
+        .no_pointers = false,
+    });
 
     const os401b = b.addModule("os401b", .{
         .root_source_file = b.path("src/os401b.zig"),

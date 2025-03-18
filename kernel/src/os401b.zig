@@ -16,7 +16,10 @@ pub const SerialError = serial.SerialError;
 pub const TtyError = term.TtyError;
 pub const Error = TtyError || SerialError;
 
-pub export var base_revision: limine.BaseRevision = .{ .revision = 3 };
+export var start_marker: limine.RequestsStartMarker linksection(".limine_requests_start") = .{};
+export var end_marker: limine.RequestsEndMarker linksection(".limine_requests_end") = .{};
+
+pub export var base_revision: limine.BaseRevision linksection(".limine_requests") = .init(3);
 
 comptime {
     std.testing.refAllDecls(@This());

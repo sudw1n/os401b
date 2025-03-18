@@ -44,12 +44,10 @@ pub const Color = enum(Pixel) {
 };
 
 pub const Framebuffer = struct {
-    pub export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
+    export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
 
     pub const Error = error{
         OutOfBounds,
-        /// The underlying framebuffer is invalid
-        InvalidFramebuffer,
     };
 
     /// The underlying memory seen as an array of Pixels
@@ -71,11 +69,7 @@ pub const Framebuffer = struct {
 
     pub fn init() Error!Framebuffer {
         if (framebuffer_request.response) |framebuffer_response| {
-            if (framebuffer_response.framebuffer_count < 1) {
-                log.err("framebuffer count == {d} (< 1)", .{framebuffer_response.framebuffer_count});
-                return Error.InvalidFramebuffer;
-            }
-            const framebuffer = framebuffer_response.framebuffers()[0];
+            const framebuffer = framebuffer_response.getFramebuffers()[0];
             // here we need to use the pitch because we need to include the actual allocated buffer
             // including the unused padding bytes
             const fb_len = (framebuffer.height * framebuffer.pitch) / @sizeOf(Pixel);
@@ -89,8 +83,7 @@ pub const Framebuffer = struct {
                 .font = Terminus.init(),
             };
         }
-        log.err("didn't receive a response to framebuffer request from the bootloader", .{});
-        return Error.InvalidFramebuffer;
+        @panic("Framebuffer response not present");
     }
 
     pub fn fill(self: Framebuffer, color: Color) void {
