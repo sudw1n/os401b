@@ -44,7 +44,7 @@ pub const SerialWriter = struct {
 
         cpu.out(PORT + 0, @as(u8, 0xAE)); // Send a test byte
         if (cpu.in(u8, PORT + 0) != 0xAE) {
-            return SerialError.InvalidSerialDevice;
+            @panic("Invalid serial device");
         }
 
         // If serial is not faulty set it in normal operation mode:
