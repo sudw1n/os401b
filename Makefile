@@ -56,7 +56,7 @@ debug: $(ISO_FILE)
 	$(QEMU) $(QEMU_COMMON_FLAGS) -d int -no-reboot -no-shutdown -S -s &
 	@sleep 1
 	@echo "Launching GDB..."
-	gdb -ex "target remote :1234" \
+	cgdb -ex "target remote :1234" \
 	    -ex "add-symbol-file kernel/zig-out/bin/kernel 0xffffffff80000000" \
 	    kernel/zig-out/bin/kernel
 
