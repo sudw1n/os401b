@@ -1,3 +1,4 @@
+const std = @import("std");
 const gdt = @import("gdt.zig");
 
 // TODO: modularize this. maybe registers stuff in a separate module?
@@ -17,9 +18,9 @@ pub const CpuidResult = struct {
 /// Values pushed when an interrupt occurs.
 pub const InterruptFrame = packed struct {
     /// Extra Segment Selector
-    es: gdt.SegmentSelector,
+    es: u64,
     /// Data Segment Selector
-    ds: gdt.SegmentSelector,
+    ds: u64,
     /// General purpose register R15
     r15: u64,
     /// General purpose register R14
@@ -60,13 +61,14 @@ pub const InterruptFrame = packed struct {
     /// Instruction Pointer
     rip: u64,
     /// Code Segment
-    cs: gdt.SegmentSelector,
+    cs: u64,
     /// RFLAGS
     rflags: RFLAGS,
     /// Stack Pointer
     rsp: u64,
     /// Stack Segment
-    ss: gdt.SegmentSelector,
+    ss: u64,
+
 };
 
 pub inline fn hlt() noreturn {
