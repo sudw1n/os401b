@@ -32,9 +32,8 @@ pub const InterruptServiceRoutine = *const fn () callconv(.Naked) noreturn;
 
 pub const InterruptDescriptor = packed struct {
     /// offset bits 0..15
-    offset_low: u16,
+    offset_low: u16 = 0,
     /// a code segment selector in GDT or LDT
-    /// TODO: accept these values as parameters in init() rather than hardcoding
     selector: u16 = @intFromEnum(SegmentSelector.KernelCode),
     /// bits 0..2 holds Interrupt Stack Table offset, rest of bits zero.
     /// IST is used in combination with the TSS to force the cpu to switch stacks when handling a
@@ -42,37 +41,32 @@ pub const InterruptDescriptor = packed struct {
     ist: u3 = 0,
     reserved1: u5 = 0,
     /// Gate type.
-    // TODO: accept this value as a parameter in init() rather than hardcoding
     gate_type: u4 = @intFromEnum(GateType.Interrupt64),
     /// Reserved
     reserved2: u1 = 0,
     /// Privilege level allowed to access this interrupt.
-    // TODO: accept this value as a parameter in init() rather than hardcoding
     dpl: u2 = @intFromEnum(Dpl.Kernel),
     /// Whether the gate is active.
-    // TODO: set in init()
     present: u1 = 1,
     /// offset bits 16..31
-    offset_mid: u16,
+    offset_mid: u16 = 0,
     /// offset bits 32..63
-    offset_high: u32,
+    offset_high: u32 = 0,
     /// reserved
     reserved3: u32 = 0,
 
-    pub fn init(isr_ptr: InterruptServiceRoutine) InterruptDescriptor {
+    pub fn setOffset(self: *InterruptDescriptor, isr_ptr: InterruptServiceRoutine) void {
         const isr: u64 = @intFromPtr(isr_ptr);
-        return InterruptDescriptor{
-            .offset_low = @as(u16, @truncate(isr)),
-            .offset_mid = @as(u16, @truncate(isr >> 16)),
-            .offset_high = @as(u32, @truncate(isr >> 32)),
-        };
+        self.offset_low = @as(u16, @truncate(isr));
+        self.offset_mid = @as(u16, @truncate(isr >> 16));
+        self.offset_high = @as(u32, @truncate(isr >> 32));
     }
 };
 
 // x86-64 has 256 interrupt vectors
 const IDT_ENTRIES = 256;
 
-var handlers: [IDT_ENTRIES]InterruptDescriptor linksection(".bss") = undefined;
+var handlers: [IDT_ENTRIES]InterruptDescriptor linksection(".data") = .{InterruptDescriptor{}} ** IDT_ENTRIES;
 
 pub fn init() void {
     setHandlers();
@@ -90,52 +84,51 @@ fn setIdtr() void {
 }
 
 fn setHandlers() void {
-    idtSet(0, idt0);
-    idtSet(1, idt1);
-    idtSet(13, idt13);
+    inline for (0..0xff) |i| {
+        if (getVector(i)) |vector| {
+            handlers[i].setOffset(vector);
+            if (Exception.is(i)) {
+                handlers[i].gate_type = @intFromEnum(GateType.Trap64);
+            } else {
+                handlers[i].gate_type = @intFromEnum(GateType.Interrupt64);
+            }
+        } else {
+            handlers[i].present = 0;
+        }
+    }
 }
 
-fn idtSet(comptime idx: usize, isr: InterruptServiceRoutine) void {
-    handlers[idx] = InterruptDescriptor.init(isr);
-}
-
-fn idt0() callconv(CallingConvention.Naked) noreturn {
-    // no error code == 0x00
-    asm volatile (
-        \\pushq $0
-    );
-    // the vector number
-    asm volatile (
-        \\pushq $0
-    );
-    asm volatile (
-        \\jmp interruptCommon
-    );
-}
-
-fn idt1() callconv(CallingConvention.Naked) noreturn {
-    // no error code == 0x00
-    asm volatile (
-        \\pushq $0
-    );
-    // the vector number
-    asm volatile (
-        \\pushq $1
-    );
-    asm volatile (
-        \\jmp interruptCommon
-    );
-}
-
-fn idt13() callconv(CallingConvention.Naked) noreturn {
-    // vector 13(#GP) does push an error code so we won't.
-    // Just push the vector number.
-    asm volatile (
-        \\pushq $13
-    );
-    asm volatile (
-        \\jmp interruptCommon
-    );
+fn getVector(comptime vector: u8) ?InterruptServiceRoutine {
+    return switch (vector) {
+        inline 2, 9, 15, 20...31 => null,
+        else => blk: {
+            break :blk struct {
+                fn func() callconv(.Naked) noreturn {
+                    const is_exception = Exception.is(vector);
+                    // if the interrupt is an exception with a vector number, then don't push a
+                    // dummy error code and only push the vector number.
+                    if (is_exception and @as(Exception, @enumFromInt(vector)).hasErrorCode()) {
+                        asm volatile (
+                            \\pushq %[vec]
+                            \\jmp interruptCommon
+                            :
+                            : [vec] "{rax}" (@as(u64, vector)),
+                        );
+                    } else {
+                        asm volatile (
+                        // no (dummy) error code == 0x00
+                            \\pushq $0
+                            // the vector number
+                            \\pushq %[vec]
+                            \\jmp interruptCommon
+                            :
+                            : [vec] "{rax}" (@as(u64, vector)),
+                        );
+                    }
+                }
+            }.func;
+        },
+    };
 }
 
 export fn interruptCommon() callconv(.Naked) void {
