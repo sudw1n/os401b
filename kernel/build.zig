@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) void {
     });
 
     kernel.want_lto = false;
-    kernel.setLinkerScriptPath(linker_script_path);
+    kernel.setLinkerScript(linker_script_path);
     kernel.root_module.addImport("os401b", os401b);
     b.installArtifact(kernel);
 }

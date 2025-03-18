@@ -1,7 +1,14 @@
 .{
-    .name = "limine-zig-template",
-    .version = "1.0.0",
-    .paths = .{"."},
+    .name = .os401b,
+    .version = "0.0.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "linker.ld",
+        "src",
+    },
+    .minimum_zig_version = "0.14.0",
+    .fingerprint = 0xc8d10b938000936b,
     .dependencies = .{
         .limine = .{
             .url = "https://github.com/48cf/limine-zig/archive/7b29b6e6f6d35052f01ed3831085a39aae131705.tar.gz",
