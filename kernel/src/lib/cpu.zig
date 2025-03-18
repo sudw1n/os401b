@@ -114,41 +114,41 @@ pub const InterruptFrame = packed struct {
     fn dissectErrorCode(self: InterruptFrame, writer: anytype) !void {
         const error_code = self.error_code;
         const exception: Exception = @enumFromInt(self.vector_number);
-        try writer.print("Error code: 0x{x:0>16}", .{error_code});
+        try writer.print("Error code: 0x{x:0>16}\n", .{error_code});
         if (exception.zeroErrorCode()) {
             return;
         }
-        try writer.print("Error code bits:", .{});
+        try writer.print("Error code bits:\n", .{});
         if (exception == Exception.PF) {
             // If set, means all the page table entries were present,
             // but translation failed due to a protection violation.
             // If cleared, a page table entry was not present.
-            try writer.print("  Present: {}", .{(error_code & 0b1) != 0});
+            try writer.print("  Present: {}\n", .{(error_code & 0b1) != 0});
             // If set, page fault was triggered by a write attempt.
             // Cleared if it was a read attempt.
-            try writer.print("  Write: {}", .{(error_code & 0b10) != 0});
+            try writer.print("  Write: {}\n", .{(error_code & 0b10) != 0});
             // Set if the CPU was in user mode (CPL = 3).
-            try writer.print("  User: {}", .{(error_code & 0b100) != 0});
+            try writer.print("  User: {}\n", .{(error_code & 0b100) != 0});
             // If set, means a reserved bit was set in a page table entry.
             // Best to walk the page tables manually and see what’s happening.
-            try writer.print("  Reserved: {}", .{(error_code & 0b1000) != 0});
+            try writer.print("  Reserved: {}\n", .{(error_code & 0b1000) != 0});
             // If NX (No-Execute) is enabled in EFER, this bit can be set.
             // If set the page fault was caused by trying to fetch
             // an instruction from an NX page.
-            try writer.print("  Instruction fetch: {}", .{(error_code & 0b10000) != 0});
+            try writer.print("  Instruction fetch: {}\n", .{(error_code & 0b10000) != 0});
         } else {
             // If set, means it was a hardware interrupt.
             // Cleared for software interrupts.
-            try writer.print("  External: {}", .{(error_code & 0b1) != 0});
+            try writer.print("  External: {}\n", .{(error_code & 0b1) != 0});
             // Set if this error code refers to the IDT.
             // If cleared it refers to the GDT or LDT (mostly unused in long mode).
-            try writer.print("  IDT: {}", .{(error_code & 0b10) != 0});
+            try writer.print("  IDT: {}\n", .{(error_code & 0b10) != 0});
             // Set if the error code refers to the LDT, cleared if referring to the GDT.
-            try writer.print("  Table Index: {}", .{(error_code & 0b100) != 0});
+            try writer.print("  Table Index: {}\n", .{(error_code & 0b100) != 0});
             // The index into the table this error code refers to.
             // This can be seen as a byte offset into the table,
             // much like a GDT selector would.
-            try writer.print("  Index: 0x{x:0>16}", .{(error_code >> 3)});
+            try writer.print("  Index: 0x{x:0>16}\n", .{(error_code >> 3)});
         }
     }
 };
