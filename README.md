@@ -31,3 +31,15 @@ If you don't want to download and use the OVMF files for UEFI support, you can r
 make run-bios
 ```
 This will run QEMU with the legacy BIOS.
+
+## Roadmap
+- [x] Limine bootloader setup
+- [x] Framebuffer and fonts
+- [x] IDT
+- [x] Serial logging
+- [ ] GDT (remapping)
+- [ ] Paging
+- [ ] Memory management (allocators)
+- [ ] APIC
+- [ ] Timer
+- [ ] Keyboard
