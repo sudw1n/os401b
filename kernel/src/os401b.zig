@@ -7,6 +7,7 @@ pub const Color = fblib.Color;
 pub const serial = @import("lib/tty/serial.zig");
 pub const term = @import("lib/tty/terminal.zig");
 pub const cpu = @import("lib/cpu.zig");
+pub const gdt = @import("lib/gdt.zig");
 pub const idt = @import("lib/interrupts/idt.zig");
 pub const apic = @import("lib/interrupts/apic.zig");
 

@@ -249,6 +249,13 @@ pub inline fn iret() noreturn {
     unreachable;
 }
 
+pub fn lgdt(gdtr: SystemTableRegister) void {
+    asm volatile ("lgdt (%[gdt])"
+        :
+        : [gdt] "r" (&gdtr),
+    );
+}
+
 pub fn lidt(idtr: SystemTableRegister) void {
     asm volatile ("lidt (%[idtr])"
         :

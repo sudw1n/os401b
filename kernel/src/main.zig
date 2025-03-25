@@ -2,10 +2,11 @@ const std = @import("std");
 const lib = @import("os401b");
 
 const cpu = lib.cpu;
+const serial = lib.serial;
 const term = lib.term;
+const gdt = lib.gdt;
 const idt = lib.idt;
 const apic = lib.apic;
-const serial = lib.serial;
 
 const Error = lib.Error;
 
@@ -47,6 +48,10 @@ pub fn kmain() Error!void {
     log.info("initializing framebuffer and tty", .{});
     try term.init(lib.Color.White, lib.Color.Black);
     log.info("initialized successfully", .{});
+
+    try term.logStepBegin("Initializing the GDT", .{});
+    gdt.init();
+    try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing the IDT", .{});
     idt.init();
