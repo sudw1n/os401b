@@ -37,7 +37,7 @@ This will run QEMU with the legacy BIOS.
 - [x] Framebuffer and fonts
 - [x] IDT
 - [x] Serial logging
-- [ ] GDT (remapping)
+- [x] GDT (remapping)
 - [ ] Paging
 - [ ] Memory management (allocators)
 - [ ] APIC

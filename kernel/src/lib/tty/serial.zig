@@ -13,6 +13,9 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
+    // The scope .none and message_level .debug stuff was implemented for one special case
+    // (printing out the interrupt stack frame) and is not used anywhere else.
+    // TODO: find a better way
     const scope_prefix = if (scope == .none) "" else "(" ++ @tagName(scope) ++ "): ";
     const prefix = "[" ++ comptime message_level.asText() ++ "] " ++ scope_prefix;
     const fmt = if (message_level == .debug) format else prefix ++ format;
