@@ -1,5 +1,13 @@
 const std = @import("std");
 
+/// CR2 Register
+pub const Cr2 = struct {
+    pub inline fn get() u64 {
+        return asm volatile ("movq %%cr2, %[out]"
+            : [out] "=r" (-> u64),
+        );
+    }
+};
 
 /// RFLAGS Register
 pub const Rflags = packed struct(u64) {

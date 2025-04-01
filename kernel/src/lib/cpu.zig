@@ -1,6 +1,7 @@
 const std = @import("std");
 const gdt = @import("gdt.zig");
 const registers = @import("registers.zig");
+const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
 
 // TODO: modularize this. maybe registers stuff in a separate module?
@@ -138,6 +139,7 @@ pub const InterruptFrame = packed struct {
             // If set the page fault was caused by trying to fetch
             // an instruction from an NX page.
             try writer.print("  Instruction fetch: {}\n", .{(error_code & 0b10000) != 0});
+            try writer.print("Accessed Address: 0x{x:0>16}\n", .{Cr2.get()});
         } else {
             // If set, means it was a hardware interrupt.
             // Cleared for software interrupts.
