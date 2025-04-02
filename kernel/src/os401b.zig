@@ -21,6 +21,7 @@ export var start_marker: limine.RequestsStartMarker linksection(".limine_request
 export var end_marker: limine.RequestsEndMarker linksection(".limine_requests_end") = .{};
 
 pub export var base_revision: limine.BaseRevision linksection(".limine_requests") = .init(3);
+pub export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
 
 comptime {
     std.testing.refAllDecls(@This());

@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const lib = @import("../../os401b.zig");
 const fblib = @import("framebuffer.zig");
 
 const Framebuffer = fblib.Framebuffer;
@@ -34,7 +35,7 @@ var writer: TerminalWriter = TerminalWriter{};
 
 /// Initialize the terminal
 pub fn init(foreground_color: Color, background_color: Color) TtyError!void {
-    framebuffer = try Framebuffer.init();
+    framebuffer = try Framebuffer.init(lib.framebuffer_request);
     framebuffer.fill(background_color);
     // the terminal doesn't care about pixels, it cares about rows and columns of text, so
     // here we translate the pixel dimensions of the framebuffer into text dimensions

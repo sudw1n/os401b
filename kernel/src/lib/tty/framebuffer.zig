@@ -44,8 +44,6 @@ pub const Color = enum(Pixel) {
 };
 
 pub const Framebuffer = struct {
-    export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
-
     pub const Error = error{
         OutOfBounds,
     };
@@ -67,7 +65,7 @@ pub const Framebuffer = struct {
     /// The font being used for drawing glyphs in the framebuffer
     font: Terminus,
 
-    pub fn init() Error!Framebuffer {
+    pub fn init(framebuffer_request: limine.FramebufferRequest) Error!Framebuffer {
         if (framebuffer_request.response) |framebuffer_response| {
             const framebuffer = framebuffer_response.getFramebuffers()[0];
             // here we need to use the pitch because we need to include the actual allocated buffer
