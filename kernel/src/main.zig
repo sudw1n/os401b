@@ -74,10 +74,6 @@ fn init() Error!void {
     try term.logStepBegin("Initializing the APIC", .{});
     apic.init();
     try term.logStepEnd(true);
-
-    try term.logStepBegin("Setting up page tables", .{});
-    paging.init();
-    try term.logStepEnd(true);
 }
 
 fn welcome() Error!void {
