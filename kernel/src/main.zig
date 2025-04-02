@@ -7,6 +7,7 @@ const term = lib.term;
 const gdt = lib.gdt;
 const idt = lib.idt;
 const apic = lib.apic;
+const paging = lib.paging;
 
 const Error = lib.Error;
 
@@ -41,6 +42,19 @@ export fn _start() noreturn {
 }
 
 pub fn kmain() Error!void {
+    try init();
+    try term.print("\n", .{});
+
+    // print welcome message
+    log.info("printing welcome message", .{});
+    try welcome();
+
+    // spawn a shell
+    log.info("spawning the shell", .{});
+    try shell();
+}
+
+fn init() Error!void {
     // perform initialization routines
     // initialize the serial console because all logging functionality depends on it
     serial.init() catch cpu.hlt(); // nothing we can log if this fails
@@ -60,15 +74,10 @@ pub fn kmain() Error!void {
     try term.logStepBegin("Initializing the APIC", .{});
     apic.init();
     try term.logStepEnd(true);
-    try term.print("\n", .{});
 
-    // print welcome message
-    log.info("printing welcome message", .{});
-    try welcome();
-
-    // spawn a shell
-    log.info("spawning the shell", .{});
-    try shell();
+    try term.logStepBegin("Setting up page tables", .{});
+    paging.init();
+    try term.logStepEnd(true);
 }
 
 fn welcome() Error!void {
