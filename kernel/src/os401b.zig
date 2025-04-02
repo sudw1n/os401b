@@ -1,6 +1,7 @@
 const std = @import("std");
 const limine = @import("limine");
 const fblib = @import("lib/tty/framebuffer.zig");
+const pmmlib = @import("lib/memory/pmm.zig");
 
 pub const Color = fblib.Color;
 
@@ -12,6 +13,7 @@ pub const idt = @import("lib/interrupts/idt.zig");
 pub const apic = @import("lib/interrupts/apic.zig");
 
 pub const SerialWriter = serial.SerialWriter;
+pub const PhysicalMemoryManager = pmmlib.PhysicalMemoryManager;
 
 pub const SerialError = serial.SerialError;
 pub const TtyError = term.TtyError;
@@ -22,6 +24,9 @@ export var end_marker: limine.RequestsEndMarker linksection(".limine_requests_en
 
 pub export var base_revision: limine.BaseRevision linksection(".limine_requests") = .init(3);
 pub export var framebuffer_request: limine.FramebufferRequest linksection(".limine_requests") = .{};
+
+// Expose the memory map request to Limine in the required section.
+pub export var memmap_request: limine.MemoryMapRequest linksection(".limine_requests") = .{};
 
 comptime {
     std.testing.refAllDecls(@This());

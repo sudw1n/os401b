@@ -3,6 +3,11 @@ const std = @import("std");
 const Feature = std.Target.x86.Feature;
 
 pub fn build(b: *std.Build) void {
+    const build_options = b.addOptions();
+    const memory = b.option(u64, "memory", "Memory to be allocated for the kernel in MiB (default: 128 MiB)") orelse 128;
+    const page_size = b.option(u64, "page_size", "Page size for the kernel in bytes (default: 4096)") orelse 4096;
+    build_options.addOption(u64, "memory", memory);
+    build_options.addOption(u64, "page_size", page_size);
     var target_query: std.Target.Query = .{
         .cpu_arch = .x86_64,
         .os_tag = .freestanding,
@@ -38,6 +43,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     os401b.addImport("limine", limine.module("limine"));
+    os401b.addOptions("build_options", build_options);
 
     const kernel = b.addExecutable(.{
         .name = "kernel",
