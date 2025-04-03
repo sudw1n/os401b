@@ -9,6 +9,21 @@ pub const Cr2 = struct {
     }
 };
 
+pub const Cr3 = struct {
+    pub inline fn get() u64 {
+        return asm volatile ("movq %%cr3, %[out]"
+            : [out] "=r" (-> u64),
+        );
+    }
+    pub inline fn set(cr3: u64) void {
+        asm volatile ("movq %[in], %%cr3"
+            :
+            : [in] "r" (cr3),
+            : "memory"
+        );
+    }
+};
+
 /// RFLAGS Register
 pub const Rflags = packed struct(u64) {
     /// Carry Flag
