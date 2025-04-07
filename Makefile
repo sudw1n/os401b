@@ -44,11 +44,6 @@ $(EFI_DIR):  | $(ISO_DIR)
 run: $(OVMF_DIR)/$(OVMF_FILE) $(ISO_FILE)
 	$(QEMU) -bios $(OVMF_DIR)/$(OVMF_FILE) -M smm=off $(QEMU_COMMON_FLAGS)
 
-# run using legacy BIOS
-.PHONY: run-bios
-run-bios: $(ISO_FILE)
-	$(QEMU) $(QEMU_COMMON_FLAGS)
-
 # debug using QEMU and GDB
 .PHONY: debug
 debug: $(ISO_FILE)
