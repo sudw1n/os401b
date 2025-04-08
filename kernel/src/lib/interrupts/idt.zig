@@ -213,7 +213,7 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
     const panicMsg = switch (Exception.is(frame.vector_number)) {
         true => blk: {
             const exception: Exception = @enumFromInt(frame.vector_number);
-            log.err("Exception: {s}", .{@tagName(exception)});
+            log.err("Exception: #{s}", .{@tagName(exception)});
             break :blk "Reached unrecoverable exception";
         },
         false => "unhandled interrupt",
