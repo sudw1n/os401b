@@ -59,8 +59,9 @@ fn init() Error!void {
     // initialize the serial console because all logging functionality depends on it
     serial.init() catch cpu.hlt(); // nothing we can log if this fails
 
+    const framebuffer = lib.framebuffer_request.response orelse @panic("failed to get framebuffer response from Limine");
     log.info("initializing framebuffer and tty", .{});
-    try term.init(lib.Color.White, lib.Color.Black);
+    try term.init(framebuffer, lib.Color.White, lib.Color.Black);
     log.info("initialized successfully", .{});
 
     try term.logStepBegin("Initializing the GDT", .{});

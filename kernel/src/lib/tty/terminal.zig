@@ -1,4 +1,5 @@
 const std = @import("std");
+const limine = @import("limine");
 
 const lib = @import("../../os401b.zig");
 const fblib = @import("framebuffer.zig");
@@ -34,8 +35,8 @@ const TAB_WIDTH = 4;
 var writer: TerminalWriter = TerminalWriter{};
 
 /// Initialize the terminal
-pub fn init(foreground_color: Color, background_color: Color) TtyError!void {
-    framebuffer = try Framebuffer.init(lib.framebuffer_request);
+pub fn init(raw_framebuffer: *limine.FramebufferResponse, foreground_color: Color, background_color: Color) TtyError!void {
+    framebuffer = try Framebuffer.init(raw_framebuffer);
     framebuffer.fill(background_color);
     // the terminal doesn't care about pixels, it cares about rows and columns of text, so
     // here we translate the pixel dimensions of the framebuffer into text dimensions

@@ -65,23 +65,20 @@ pub const Framebuffer = struct {
     /// The font being used for drawing glyphs in the framebuffer
     font: Terminus,
 
-    pub fn init(framebuffer_request: limine.FramebufferRequest) Error!Framebuffer {
-        if (framebuffer_request.response) |framebuffer_response| {
-            const framebuffer = framebuffer_response.getFramebuffers()[0];
-            // here we need to use the pitch because we need to include the actual allocated buffer
-            // including the unused padding bytes
-            const fb_len = (framebuffer.height * framebuffer.pitch) / @sizeOf(Pixel);
-            const buffer: []volatile Pixel = @as([*]volatile Pixel, @ptrCast(@alignCast(framebuffer.address)))[0..fb_len];
-            return Framebuffer{
-                .buffer = buffer,
-                .width = framebuffer.width,
-                .height = framebuffer.height,
-                .pixelWidth = framebuffer.bpp / 8,
-                .pitch = framebuffer.pitch,
-                .font = Terminus.init(),
-            };
-        }
-        @panic("Framebuffer response not present");
+    pub fn init(framebuffer: *limine.FramebufferResponse) Error!Framebuffer {
+        const fb = framebuffer.getFramebuffers()[0];
+        // here we need to use the pitch because we need to include the actual allocated buffer
+        // including the unused padding bytes
+        const fb_len = (fb.height * fb.pitch) / @sizeOf(Pixel);
+        const buffer: []volatile Pixel = @as([*]volatile Pixel, @ptrCast(@alignCast(fb.address)))[0..fb_len];
+        return Framebuffer{
+            .buffer = buffer,
+            .width = fb.width,
+            .height = fb.height,
+            .pixelWidth = fb.bpp / 8,
+            .pitch = fb.pitch,
+            .font = Terminus.init(),
+        };
     }
 
     pub fn fill(self: Framebuffer, color: Color) void {
