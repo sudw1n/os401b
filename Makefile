@@ -23,6 +23,7 @@ QEMU                       := qemu-system-x86_64
 # memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
 # generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
 QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -serial stdio
+QEMU_DEBUG_FLAGS           := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -no-reboot -no-shutdown -S -s -serial file:debug_log
 
 $(BUILD_DIR):
 	@mkdir $(BUILD_DIR)
@@ -48,12 +49,14 @@ run: $(OVMF_DIR)/$(OVMF_FILE) $(ISO_FILE)
 .PHONY: debug
 debug: $(ISO_FILE)
 	@echo "Starting QEMU..."
-	$(QEMU) $(QEMU_COMMON_FLAGS) -no-reboot -no-shutdown -S -s &
+	touch debug_log
+	$(QEMU) $(QEMU_DEBUG_FLAGS) &
 	@sleep 1
 	@echo "Launching GDB..."
 	cgdb -ex "target remote :1234" \
 	    -ex "add-symbol-file kernel/zig-out/bin/kernel 0xffffffff80000000" \
-	    kernel/zig-out/bin/kernel
+	    kernel/zig-out/bin/kernel;
+	unlink debug_log
 
 $(OVMF_DIR)/$(OVMF_FILE): | $(OVMF_DIR)
 	wget -O $(OVMF_DIR)/$(OVMF_FILE) $(OVMF_URL)
