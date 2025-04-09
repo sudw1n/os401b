@@ -7,6 +7,7 @@ const term = lib.term;
 const gdt = lib.gdt;
 const idt = lib.idt;
 const apic = lib.apic;
+const registers = lib.registers;
 const paging = lib.paging;
 
 const Error = lib.Error;
@@ -74,6 +75,16 @@ fn init() Error!void {
 
     try term.logStepBegin("Initializing the APIC", .{});
     apic.init();
+    try term.logStepEnd(true);
+
+    const memmap = lib.memmap_request.response orelse @panic("failed to get memory map response from Limine");
+    if (memmap.entry_count == 0) {
+        @panic("No memory map entries found from Limine");
+    }
+    const hhdm_response = lib.hhdm_request.response orelse @panic("failed to get HHDM offset from Limine");
+    const hhdm_offset = hhdm_response.offset;
+    try term.logStepBegin("Setting up new page tables", .{});
+    paging.init(memmap, hhdm_offset);
     try term.logStepEnd(true);
 }
 
