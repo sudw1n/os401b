@@ -8,8 +8,8 @@ const ArrayBitSet = std.bit_set.ArrayBitSet;
 const BitmapEntryType = u64;
 const Bitmap = ArrayBitSet(BitmapEntryType, TOTAL_PAGES);
 
-const PAGE_SIZE = build_options.page_size;
-const TOTAL_PAGES = blk: {
+pub const PAGE_SIZE = build_options.page_size;
+pub const TOTAL_PAGES = blk: {
     const memoryMiB = build_options.memory;
     const totalBytes = memoryMiB * 1024 * 1024;
     break :blk totalBytes / PAGE_SIZE;
