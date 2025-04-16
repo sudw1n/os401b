@@ -16,6 +16,7 @@ const TOTAL_PAGES = blk: {
 };
 
 var HHDM_OFFSET: u64 = 0;
+var allocator: PhysicalMemoryManager = undefined;
 
 pub const PhysicalMemoryManager = struct {
     pub const Error = error{
@@ -225,20 +226,20 @@ pub const PageTable = struct {
     entries: [ENTRY_COUNT]PageTableEntry,
 
     /// Allocate a page table
-    pub fn init(allocator: *PhysicalMemoryManager) *PageTable {
+    pub fn init() *PageTable {
         // Allocate a 4096-byte block for the page table.
         const mem = physToVirt([]u8, allocator.alloc(@sizeOf(PageTable)));
         return @as(*PageTable, @ptrCast(@alignCast(mem)));
     }
     /// Initialize a page table with zeroed entries.
-    pub fn initZero(allocator: *PhysicalMemoryManager) *PageTable {
-        const table = PageTable.init(allocator);
+    pub fn initZero() *PageTable {
+        const table = PageTable.init();
         for (&table.entries) |*entry| {
             entry.* = PageTableEntry.init(0, &.{});
         }
         return table;
     }
-    pub fn deinit(self: *PageTable, allocator: *PhysicalMemoryManager) void {
+    pub fn deinit(self: *PageTable) void {
         // Deallocate the page table.
         const ptr = @as([*]u8, @ptrCast(self));
         const len = @sizeOf(PageTable);
@@ -255,9 +256,9 @@ pub const PT = PageTable;
 /// PML4 -> PDPT -> PageDirectory -> PT -> Physical Frame
 pub fn init(memory_map: *limine.MemoryMapResponse, hhdm_offset: u64) void {
     HHDM_OFFSET = hhdm_offset;
-    var allocator = PhysicalMemoryManager.init(memory_map);
+    allocator = PhysicalMemoryManager.init(memory_map);
 
-    const pml4 = @as(*PageTable, @ptrFromInt(physToVirtRaw(registers.Cr3.get())));
+    const pml4 = getPml4();
     log.info("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
 
     // map physical frames
@@ -269,27 +270,20 @@ pub fn init(memory_map: *limine.MemoryMapResponse, hhdm_offset: u64) void {
                 const base = if (entry.base == 0) entry.base + 0x1000 else entry.base;
                 const length = if (entry.base == 0) entry.length - 0x1000 else entry.length;
                 const virt_addr = base + hhdm_offset;
-                log.info("Mapping region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ virt_addr, virt_addr + length, base });
-                mapRange(&allocator, pml4, virt_addr, base, length, &.{ .Present, .Writable });
+                log.info("Mapping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
+                mapRange(virt_addr, base, length, &.{ .Present, .Writable });
             },
             else => {},
         }
     }
 
-    log.info("previous CR3: {x:0>16}", .{registers.Cr3.get()});
-
-    log.info("Loading CR3 with new PML4 address", .{});
     // load the new page table base
-    const pml4Int = @intFromPtr(pml4);
-    log.info("pml4Int = {x:0>16}", .{pml4Int});
-    const pml4Phys = virtToPhysRaw(pml4Int);
-    log.info("pml4Phys = {x:0>16}", .{pml4Phys});
-    registers.Cr3.set(pml4Phys);
+    const cr3_val = virtToPhysRaw(@intFromPtr(pml4));
+    log.info("Reloading CR3 with value: {x:0>16}", .{cr3_val});
+    registers.Cr3.set(cr3_val);
 }
 
-fn mapRange(
-    allocator: *PhysicalMemoryManager,
-    pml4: *PageTable,
+pub fn mapRange(
     virt_addr: u64,
     phys_addr: u64,
     length: u64,
@@ -301,11 +295,15 @@ fn mapRange(
     };
     for (0..pages) |i| {
         const offset = pageToAddress(i);
-        mapPage(allocator, pml4, virt_addr + offset, phys_addr + offset, flags);
+        mapPage(virt_addr + offset, phys_addr + offset, flags);
     }
 }
 
-fn mapPage(allocator: *PhysicalMemoryManager, pml4: *PageTable, virt_addr: u64, phys_addr: u64, flags: []const PageTableEntryFlags) void {
+pub fn mapPage(virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
+    const virt_addr = std.mem.alignBackward(u64, virt, PAGE_SIZE);
+    const phys_addr = std.mem.alignBackward(u64, phys, PAGE_SIZE);
+    const pml4 = getPml4();
+
     log.info("Mapping page: virt {x:0>16} -> phys {x:0>16}", .{ virt_addr, phys_addr });
     // Calculate indices for each paging level.
     //
@@ -317,18 +315,12 @@ fn mapPage(allocator: *PhysicalMemoryManager, pml4: *PageTable, virt_addr: u64, 
     const pd_index = (virt_addr >> 21) & 0x1FF;
     const pt_index = (virt_addr >> 12) & 0x1FF;
 
-    log.info("Page Table Indices:", .{});
-    log.info("  PML4: {d}", .{pml4_index});
-    log.info("  PDPT: {d}", .{pdpt_index});
-    log.info("  PD  : {d}", .{pd_index});
-    log.info("  PT  : {d}", .{pt_index});
-
-    var pdpt: *PageTable = undefined;
+    var pdpt: *PDPT = undefined;
     var pml4_entry = &pml4.entries[pml4_index];
     log.debug("PML4 Entry at index {d}: {x:0>16}", .{ pml4_index, pml4_entry.getFrameAddress() });
     if (!pml4_entry.checkFlag(.Present)) {
         log.debug("  PML4 Entry not present. Creating new PDPT...", .{});
-        pdpt = PageTable.initZero(allocator);
+        pdpt = PDPT.initZero();
         pml4_entry.* = PageTableEntry.init(virtToPhysRaw(@intFromPtr(pdpt)), &.{ .Present, .Writable });
         log.debug("  New PDPT created at: {x:0>16}", .{@intFromPtr(pdpt)});
     } else {
@@ -338,12 +330,12 @@ fn mapPage(allocator: *PhysicalMemoryManager, pml4: *PageTable, virt_addr: u64, 
         log.debug("  Existing PDPT at: {x:0>16}", .{@intFromPtr(pdpt)});
     }
 
-    var pd: *PageTable = undefined;
+    var pd: *PageDirectory = undefined;
     var pdpt_entry = &pdpt.entries[pdpt_index];
     log.debug("PDPT Entry at index {d}: {x:0>16}", .{ pdpt_index, pdpt_entry.getFrameAddress() });
     if (!pdpt_entry.checkFlag(.Present)) {
         log.debug("  PDPT Entry not present. Creating new PD...", .{});
-        pd = PageTable.initZero(allocator);
+        pd = PageDirectory.initZero();
         pdpt_entry.* = PageTableEntry.init(virtToPhysRaw(@intFromPtr(pd)), &.{ .Present, .Writable });
         log.debug("  New PD created at: {x:0>16}", .{@intFromPtr(pd)});
     } else {
@@ -352,12 +344,12 @@ fn mapPage(allocator: *PhysicalMemoryManager, pml4: *PageTable, virt_addr: u64, 
         log.debug("  Existing PD at: {x:0>16}", .{@intFromPtr(pd)});
     }
 
-    var pt: *PageTable = undefined;
+    var pt: *PT = undefined;
     var pd_entry = &pd.entries[pd_index];
     log.debug("PD Entry at index {d}: {x:0>16}", .{ pd_index, pd_entry.getFrameAddress() });
     if (!pd_entry.checkFlag(.Present)) {
         log.debug("  PD Entry not present. Creating new PT...", .{});
-        pt = PageTable.initZero(allocator);
+        pt = PT.initZero();
         pd_entry.* = PageTableEntry.init(virtToPhysRaw(@intFromPtr(pt)), &.{ .Present, .Writable });
         log.debug("  New PT created at: {x:0>16}", .{@intFromPtr(pt)});
     } else {
@@ -372,6 +364,10 @@ fn mapPage(allocator: *PhysicalMemoryManager, pml4: *PageTable, virt_addr: u64, 
     log.info("Page mapped: virt {x:0>16} -> phys {x:0>16} (PML4[{d}], PDPT[{d}], PD[{d}], PT[{d}])", .{ virt_addr, phys_addr, pml4_index, pdpt_index, pd_index, pt_index });
 }
 
+inline fn getPml4() *PML4 {
+    return @ptrFromInt(physToVirtRaw(registers.Cr3.get()));
+}
+
 fn pageToAddress(page: u64) u64 {
     return page * PAGE_SIZE;
 }
@@ -382,20 +378,20 @@ fn addressToPage(address: u64) u64 {
 
 // Return virtual address (at HHDM offset) of the slice
 // mem should be a slice with the `ptr` field value being a physical address.
-fn virtToPhys(comptime T: type, mem: []u8) T {
+pub fn virtToPhys(comptime T: type, mem: []u8) T {
     return @as(T, @ptrCast(@as([*]u8, @ptrFromInt(virtToPhysRaw(@intFromPtr(mem.ptr))))[0..mem.len]));
 }
 
-fn virtToPhysRaw(address: u64) u64 {
+pub fn virtToPhysRaw(address: u64) u64 {
     return address - HHDM_OFFSET;
 }
 
 // Return virtual address (at HHDM offset) of the slice
 // mem should be a slice with the `ptr` field value being a physical address.
-fn physToVirt(comptime T: type, mem: []u8) T {
+pub fn physToVirt(comptime T: type, mem: []u8) T {
     return @as(T, @ptrCast(@as([*]u8, @ptrFromInt(physToVirtRaw(@intFromPtr(mem.ptr))))[0..mem.len]));
 }
 
-fn physToVirtRaw(address: u64) u64 {
+pub fn physToVirtRaw(address: u64) u64 {
     return HHDM_OFFSET + address;
 }
