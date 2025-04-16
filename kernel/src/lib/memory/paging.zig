@@ -266,6 +266,8 @@ pub fn init(memory_map: *limine.MemoryMapResponse, hhdm_offset: u64) void {
     for (entries) |entry| {
         switch (entry.type) {
             .usable,
+            .acpi_reclaimable,
+            .acpi_nvs,
             => {
                 const base = if (entry.base == 0) entry.base + 0x1000 else entry.base;
                 const length = if (entry.base == 0) entry.length - 0x1000 else entry.length;
