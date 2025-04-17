@@ -12,6 +12,7 @@ pub const idt = @import("lib/interrupts/idt.zig");
 pub const apic = @import("lib/interrupts/apic.zig");
 pub const registers = @import("lib/registers.zig");
 pub const paging = @import("lib/memory/paging.zig");
+pub const acpi = @import("lib/acpi.zig");
 
 pub const SerialWriter = serial.SerialWriter;
 
@@ -29,6 +30,8 @@ pub export var framebuffer_request: limine.FramebufferRequest linksection(".limi
 pub export var memmap_request: limine.MemoryMapRequest linksection(".limine_requests") = .{};
 
 pub export var hhdm_request: limine.HhdmRequest linksection(".limine_requests") = .{};
+
+pub export var rsdp_request: limine.RsdpRequest linksection(".limine_requests") = .{};
 
 comptime {
     std.testing.refAllDecls(@This());
