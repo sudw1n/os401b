@@ -38,8 +38,14 @@ This will run QEMU with the legacy BIOS.
 - [x] IDT
 - [x] Serial logging
 - [x] GDT (remapping)
-- [ ] Paging
 - [ ] Memory management (allocators)
+- [ ] Paging
+- [ ] ACPI Tables
 - [ ] APIC
 - [ ] Timer
 - [ ] Keyboard
+- [ ] Scheduler
+- [ ] Userspace (system calls)
+- [ ] File system (VFS)
+- [ ] ELF loader
+- [ ] Testing (memory safety)
