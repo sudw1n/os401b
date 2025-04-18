@@ -73,7 +73,7 @@ pub const PhysicalMemoryManager = struct {
         total_usable -= kernel_bytes;
         const kernel_pages = bytesToPage(kernel_bytes);
         // null page is already reserved
-        log.info("Marking kernel pages as reserved: {d} pages", .{kernel_pages});
+        log.debug("Marking kernel pages as reserved: {d} pages", .{kernel_pages});
         bitmap.setRangeValue(.{ .start = 1, .end = kernel_pages }, false);
 
         log.info("Total usable memory: {d} MiB", .{total_usable / 1024 / 1024});
@@ -274,7 +274,7 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     allocator = PhysicalMemoryManager.init(memory_map);
 
     pml4 = PML4.initZero();
-    log.info("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
+    log.debug("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
 
     // map physical frames
     const entries = memory_map.getEntries();
@@ -297,7 +297,7 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
 
     // load the new page table base
     const cr3_val = virtToPhysRaw(@intFromPtr(pml4));
-    log.info("Reloading CR3 with value: {x:0>16}", .{cr3_val});
+    log.debug("Reloading CR3 with value: {x:0>16}", .{cr3_val});
     registers.Cr3.set(cr3_val);
 }
 
