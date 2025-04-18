@@ -22,7 +22,7 @@ QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
 # memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
 # generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
-QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -serial stdio
+QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -serial stdio -no-reboot -no-shutdown
 QEMU_DEBUG_FLAGS           := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -no-reboot -no-shutdown -S -s -serial file:debug_log
 
 $(BUILD_DIR):
