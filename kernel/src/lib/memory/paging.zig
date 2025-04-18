@@ -8,6 +8,20 @@ const ArrayBitSet = std.bit_set.ArrayBitSet;
 const BitmapEntryType = u64;
 const Bitmap = ArrayBitSet(BitmapEntryType, TOTAL_PAGES);
 
+extern const __kernel_start: u8;
+extern const __kernel_end: u8;
+extern const __kernel_code_start: u8;
+extern const __kernel_code_end: u8;
+extern const __kernel_rodata_start: u8;
+extern const __kernel_rodata_end: u8;
+extern const __kernel_data_start: u8;
+extern const __kernel_data_end: u8;
+extern const __kernel_bss_start: u8;
+extern const __kernel_bss_end: u8;
+// stack grows downward
+extern const __kernel_stack_top: u8;
+extern const __kernel_stack_bottom: u8;
+
 pub const PAGE_SIZE = build_options.page_size;
 pub const TOTAL_PAGES = blk: {
     const memoryMiB = build_options.memory;
@@ -54,20 +68,23 @@ pub const PhysicalMemoryManager = struct {
                 total_usable += length;
             }
         }
+        // also mark the pages occupied by the kernel itself
+        const kernel_bytes = @intFromPtr(&__kernel_end) - @intFromPtr(&__kernel_start);
+        total_usable -= kernel_bytes;
+        const kernel_pages = bytesToPage(kernel_bytes);
+        // null page is already reserved
+        log.info("Marking kernel pages as reserved: {d} pages", .{kernel_pages});
+        bitmap.setRangeValue(.{ .start = 1, .end = kernel_pages }, false);
 
         log.info("Total usable memory: {d} MiB", .{total_usable / 1024 / 1024});
-        std.debug.assert(bitmap.count() == total_usable / PAGE_SIZE);
-        return PhysicalMemoryManager{
-            .free_bitmap = bitmap,
-        };
+        std.debug.assert(bitmap.count() == bytesToPage(total_usable));
+
+        return PhysicalMemoryManager{ .free_bitmap = bitmap };
     }
     /// Allocate pages that fit given size
     pub fn alloc(self: *PhysicalMemoryManager, size: u64) []u8 {
         // how many pages needed to fullfill this allocation
-        const pages_needed = std.math.divCeil(u64, size, PAGE_SIZE) catch {
-            @branchHint(.unlikely);
-            @panic("PhysicalMemoryManager.alloc(): Divide error");
-        };
+        const pages_needed = bytesToPage(size);
         const startPage = self.findContiguous(pages_needed);
         // mark the range as reserved
         self.free_bitmap.setRangeValue(.{ .start = startPage, .end = startPage + pages_needed }, false);
@@ -99,10 +116,7 @@ pub const PhysicalMemoryManager = struct {
     /// Returns false if the page is already free (double-free).
     pub fn free(self: *PhysicalMemoryManager, bytes: []u8) !void {
         const size = bytes.len;
-        const pages = std.math.divCeil(u64, size, PAGE_SIZE) catch {
-            @branchHint(.unlikely);
-            @panic("PhysicalMemoryManager.alloc(): Divide error");
-        };
+        const pages = bytesToPage(size);
         const address = @intFromPtr(bytes.ptr);
         std.debug.assert(address % PAGE_SIZE == 0);
         const startPage = addressToPage(address);
@@ -255,18 +269,19 @@ pub const PageDirectory = PageTable;
 pub const PT = PageTable;
 
 /// PML4 -> PDPT -> PageDirectory -> PT -> Physical Frame
-pub fn init(memory_map: *limine.MemoryMapResponse, hhdm_offset: u64) void {
+pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse, hhdm_offset: u64) void {
     HHDM_OFFSET = hhdm_offset;
     allocator = PhysicalMemoryManager.init(memory_map);
 
-    pml4 = getPml4();
+    pml4 = PML4.initZero();
     log.info("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
 
     // map physical frames
     const entries = memory_map.getEntries();
     for (entries) |entry| {
         const flags: []const PageTableEntryFlags = switch (entry.type) {
-            .usable => &.{ .Present, .Writable },
+            .usable, .bootloader_reclaimable => &.{ .Present, .Writable },
+            .framebuffer, .acpi_reclaimable, .acpi_nvs => &.{ .Present, .Writable, .WriteThrough, .NoCache },
             else => {
                 continue;
             },
@@ -278,10 +293,76 @@ pub fn init(memory_map: *limine.MemoryMapResponse, hhdm_offset: u64) void {
         mapRange(virt_addr, base, length, flags);
     }
 
+    mapOwn(executable_address_response);
+
     // load the new page table base
     const cr3_val = virtToPhysRaw(@intFromPtr(pml4));
     log.info("Reloading CR3 with value: {x:0>16}", .{cr3_val});
     registers.Cr3.set(cr3_val);
+}
+
+// map own stack and code regions
+fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
+    const regions = &[_]struct {
+        name: []const u8,
+        start: u64,
+        end: u64,
+        flags: []const PageTableEntryFlags,
+    }{
+        // .text: RX, read‑only, executable
+        .{
+            .name = "text",
+            .start = @intFromPtr(&__kernel_code_start),
+            .end = @intFromPtr(&__kernel_code_end),
+            .flags = &.{.Present},
+        },
+
+        // .rodata: R‑only, non‑executable
+        .{
+            .name = "rodata",
+            .start = @intFromPtr(&__kernel_rodata_start),
+            .end = @intFromPtr(&__kernel_rodata_end),
+            .flags = &.{ .Present, .NoExecute },
+        },
+
+        // .data: RW, non‑executable
+        .{
+            .name = "data",
+            .start = @intFromPtr(&__kernel_data_start),
+            .end = @intFromPtr(&__kernel_data_end),
+            .flags = &.{ .Present, .Writable, .NoExecute },
+        },
+
+        // .bss: RW, non‑executable
+        .{
+            .name = "bss",
+            .start = @intFromPtr(&__kernel_bss_start),
+            .end = @intFromPtr(&__kernel_bss_end),
+            .flags = &.{ .Present, .Writable, .NoExecute },
+        },
+
+        // stack: RW, non‑executable (grows down from top)
+        .{
+            .name = "stack",
+            .start = @intFromPtr(&__kernel_stack_bottom),
+            .end = @intFromPtr(&__kernel_stack_top),
+            .flags = &.{ .Present, .Writable, .NoExecute },
+        },
+    };
+
+    const vbase = executable_address_response.virtual_base;
+    const pbase = executable_address_response.physical_base;
+
+    for (regions) |reg| {
+        const virt = reg.start;
+        const length = reg.end - reg.start;
+        const offset = virt - vbase; // how far into the kernel base is this pointer
+        const phys = pbase + offset; // location in RAM for that offset
+
+        log.info("Mapping {s} region virt {x:0>16}-{x:0>16} -> phys {x:0>16} (len={d} bytes)", .{ reg.name, virt, virt + length, phys, length });
+
+        mapRange(virt, phys, length, reg.flags);
+    }
 }
 
 pub fn mapRange(
@@ -290,10 +371,7 @@ pub fn mapRange(
     length: u64,
     flags: []const PageTableEntryFlags,
 ) void {
-    const pages: u64 = std.math.divCeil(u64, length, PAGE_SIZE) catch {
-        @branchHint(.unlikely);
-        @panic("mapRange(): Divide error");
-    };
+    const pages: u64 = bytesToPage(length);
     for (0..pages) |i| {
         const offset = pageToAddress(i);
         mapPage(virt_addr + offset, phys_addr + offset, flags);
@@ -301,8 +379,8 @@ pub fn mapRange(
 }
 
 pub fn mapPage(virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
-    const virt_addr = std.mem.alignBackward(u64, virt, PAGE_SIZE);
-    const phys_addr = std.mem.alignBackward(u64, phys, PAGE_SIZE);
+    const virt_addr = pageFloor(virt);
+    const phys_addr = pageFloor(phys);
 
     log.debug("Mapping page: virt {x:0>16} -> phys {x:0>16}", .{ virt_addr, phys_addr });
     // Calculate indices for each paging level.
@@ -372,6 +450,13 @@ fn pageToAddress(page: u64) u64 {
     return page * PAGE_SIZE;
 }
 
+fn bytesToPage(bytes: u64) u64 {
+    return std.math.divCeil(u64, bytes, PAGE_SIZE) catch {
+        @branchHint(.unlikely);
+        @panic("bytesToPage: Divide error");
+    };
+}
+
 fn addressToPage(address: u64) u64 {
     return address / PAGE_SIZE;
 }
@@ -394,4 +479,11 @@ pub fn physToVirt(comptime T: type, mem: []u8) T {
 
 pub fn physToVirtRaw(address: u64) u64 {
     return HHDM_OFFSET + address;
+}
+
+fn pageFloor(addr: u64) u64 {
+    return std.mem.alignBackward(u64, addr, PAGE_SIZE);
+}
+fn pageCeil(addr: u64) u64 {
+    return std.mem.alignForward(u64, addr, PAGE_SIZE);
 }

@@ -33,6 +33,8 @@ pub export var hhdm_request: limine.HhdmRequest linksection(".limine_requests") 
 
 pub export var rsdp_request: limine.RsdpRequest linksection(".limine_requests") = .{};
 
+pub export var executable_address_request: limine.ExecutableAddressRequest linksection(".limine_requests") = .{};
+
 comptime {
     std.testing.refAllDecls(@This());
 }

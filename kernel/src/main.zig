@@ -83,8 +83,9 @@ fn init() Error!void {
     }
     const hhdm_response = lib.hhdm_request.response orelse @panic("failed to get HHDM offset from Limine");
     const hhdm_offset = hhdm_response.offset;
+    const executable_address_response = lib.executable_address_request.response orelse @panic("failed to get executable address response from Limine");
     try term.logStepBegin("Setting up new page tables", .{});
-    paging.init(memmap, hhdm_offset);
+    paging.init(memmap, executable_address_response, hhdm_offset);
     try term.logStepEnd(true);
 }
 
