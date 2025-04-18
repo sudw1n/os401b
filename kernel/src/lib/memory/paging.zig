@@ -17,6 +17,7 @@ pub const TOTAL_PAGES = blk: {
 
 var HHDM_OFFSET: u64 = 0;
 var allocator: PhysicalMemoryManager = undefined;
+var pml4: *PML4 = undefined;
 
 pub const PhysicalMemoryManager = struct {
     pub const Error = error{
@@ -258,25 +259,23 @@ pub fn init(memory_map: *limine.MemoryMapResponse, hhdm_offset: u64) void {
     HHDM_OFFSET = hhdm_offset;
     allocator = PhysicalMemoryManager.init(memory_map);
 
-    const pml4 = getPml4();
+    pml4 = getPml4();
     log.info("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
 
     // map physical frames
     const entries = memory_map.getEntries();
     for (entries) |entry| {
-        switch (entry.type) {
-            .usable,
-            .acpi_reclaimable,
-            .acpi_nvs,
-            => {
-                const base = if (entry.base == 0) entry.base + 0x1000 else entry.base;
-                const length = if (entry.base == 0) entry.length - 0x1000 else entry.length;
-                const virt_addr = base + hhdm_offset;
-                log.info("Mapping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
-                mapRange(virt_addr, base, length, &.{ .Present, .Writable });
+        const flags: []const PageTableEntryFlags = switch (entry.type) {
+            .usable => &.{ .Present, .Writable },
+            else => {
+                continue;
             },
-            else => {},
-        }
+        };
+        const base = if (entry.base == 0) entry.base + 0x1000 else entry.base;
+        const length = if (entry.base == 0) entry.length - 0x1000 else entry.length;
+        const virt_addr = base + hhdm_offset;
+        log.info("Mapping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
+        mapRange(virt_addr, base, length, flags);
     }
 
     // load the new page table base
@@ -304,9 +303,8 @@ pub fn mapRange(
 pub fn mapPage(virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
     const virt_addr = std.mem.alignBackward(u64, virt, PAGE_SIZE);
     const phys_addr = std.mem.alignBackward(u64, phys, PAGE_SIZE);
-    const pml4 = getPml4();
 
-    log.info("Mapping page: virt {x:0>16} -> phys {x:0>16}", .{ virt_addr, phys_addr });
+    log.debug("Mapping page: virt {x:0>16} -> phys {x:0>16}", .{ virt_addr, phys_addr });
     // Calculate indices for each paging level.
     //
     // Each of these indices is 9 bits wide:
@@ -363,7 +361,7 @@ pub fn mapPage(virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
     // write the mapping into the page table
     log.debug("Mapping the physical address into PT at index {d}.", .{pt_index});
     pt.entries[pt_index] = PageTableEntry.init(phys_addr, flags);
-    log.info("Page mapped: virt {x:0>16} -> phys {x:0>16} (PML4[{d}], PDPT[{d}], PD[{d}], PT[{d}])", .{ virt_addr, phys_addr, pml4_index, pdpt_index, pd_index, pt_index });
+    log.debug("Page mapped: virt {x:0>16} -> phys {x:0>16} (PML4[{d}], PDPT[{d}], PD[{d}], PT[{d}])", .{ virt_addr, phys_addr, pml4_index, pdpt_index, pd_index, pt_index });
 }
 
 inline fn getPml4() *PML4 {
