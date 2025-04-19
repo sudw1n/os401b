@@ -21,7 +21,6 @@ pub const Rsdp2Descriptor = extern struct {
         if (!self.validateChecksum()) {
             @panic("RSDP validation failed");
         }
-        paging.mapPage(paging.physToVirtRaw(self.xsdt_address), self.xsdt_address, &.{ .Present, .Writable });
         return self;
     }
     pub fn getXSDT(self: *Rsdp2Descriptor) *Xsdt {
@@ -46,7 +45,8 @@ pub const Xsdt = extern struct {
     pub fn getSdtHeader(self: *Xsdt, n: usize) *AcpiSdtHeader {
         const entry_count = (self.sdt_header.length - @sizeOf(AcpiSdtHeader)) / @sizeOf(u64);
         const entries = @as([*]align(1) u64, @ptrFromInt(@intFromPtr(self) + @sizeOf(AcpiSdtHeader)))[0..entry_count];
-        const entry: *AcpiSdtHeader = @ptrFromInt(paging.physToVirtRaw(entries[n]));
+        const entry_addr = paging.physToVirtRaw(entries[n]);
+        const entry: *AcpiSdtHeader = @ptrFromInt(entry_addr);
         log.debug("Retrieving XSDT entry at index {d} = {s}", .{ n, entry.signature });
         return entry;
     }
