@@ -208,7 +208,7 @@ export fn interruptCommon() callconv(.Naked) void {
 }
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
-    log.info("Received interrupt {}", .{frame.vector_number});
+    log.info("Received interrupt 0x{x}", .{frame.vector_number});
 
     const panicMsg = switch (Exception.is(frame.vector_number)) {
         true => blk: {
