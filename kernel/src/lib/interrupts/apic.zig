@@ -1,21 +1,40 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
+const registers = @import("../registers.zig");
+const paging = @import("../memory/paging.zig");
 const term = @import("../tty/terminal.zig");
 
 const log = std.log.scoped(.apic);
 
 const Leaf = cpu.Leaf;
 
+const Msr = registers.Msr;
+
 pub fn init() void {
-    log.info("checking APIC support", .{});
+    log.debug("checking APIC support", .{});
     if (!checkApic()) {
         log.err("APIC not supported", .{});
         return;
     }
     log.info("APIC seems to be supported", .{});
-    log.info("disabling the 8259 PIC", .{});
+
+    log.debug("disabling the 8259 PIC", .{});
     disablePic();
-    log.info("PIC disabled", .{});
+    log.info("8259 PIC disabled", .{});
+
+    log.debug("retrieving APIC base address", .{});
+    const apic_msr = cpu.rdmsr(Msr.IA32_APIC_BASE);
+    // extract the base address from the MSR (bits 12-31)
+    const apic_base_phys = apic_msr & 0xfffff000;
+    log.debug("APIC base address: {x:0>16}", .{apic_base_phys});
+    const apic_base_virt = paging.physToVirtRaw(apic_base_phys);
+    log.info("Mapping APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
+        apic_base_virt,
+        apic_base_virt + paging.PAGE_SIZE,
+        apic_base_phys,
+    });
+    paging.mapPage(apic_base_virt, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
+    log.debug("APIC base address mapped", .{});
 }
 
 pub fn checkApic() bool {
