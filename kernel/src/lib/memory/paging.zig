@@ -10,6 +10,8 @@ const Bitmap = ArrayBitSet(BitmapEntryType, TOTAL_PAGES);
 
 extern const __kernel_start: u8;
 extern const __kernel_end: u8;
+extern const __limine_requests_start: u8;
+extern const __limine_requests_end: u8;
 extern const __kernel_code_start: u8;
 extern const __kernel_code_end: u8;
 extern const __kernel_rodata_start: u8;
@@ -279,16 +281,17 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     // map physical frames
     const entries = memory_map.getEntries();
     for (entries) |entry| {
+        const base = entry.base;
+        const length = entry.length;
+        const virt_addr = physToVirtRaw(base);
         const flags: []const PageTableEntryFlags = switch (entry.type) {
-            .usable, .bootloader_reclaimable => &.{ .Present, .Writable },
+            .usable, .bootloader_reclaimable, .executable_and_modules => &.{ .Present, .Writable },
             .framebuffer, .acpi_reclaimable, .acpi_nvs => &.{ .Present, .Writable, .WriteThrough, .NoCache },
             else => {
+                log.debug("Skipping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
                 continue;
             },
         };
-        const base = if (entry.base == 0) entry.base + 0x1000 else entry.base;
-        const length = if (entry.base == 0) entry.length - 0x1000 else entry.length;
-        const virt_addr = base + hhdm_offset;
         log.info("Mapping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
         mapRange(virt_addr, base, length, flags);
     }
@@ -309,6 +312,13 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
         end: u64,
         flags: []const PageTableEntryFlags,
     }{
+        // .limine_requests: R, read‑only, non-executable
+        .{
+            .name = "limine_requests",
+            .start = @intFromPtr(&__limine_requests_start),
+            .end = @intFromPtr(&__limine_requests_end),
+            .flags = &.{ .Present, .NoExecute },
+        },
         // .text: RX, read‑only, executable
         .{
             .name = "text",
@@ -359,7 +369,7 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
         const offset = virt - vbase; // how far into the kernel base is this pointer
         const phys = pbase + offset; // location in RAM for that offset
 
-        log.info("Mapping {s} region virt {x:0>16}-{x:0>16} -> phys {x:0>16} (len={d} bytes)", .{ reg.name, virt, virt + length, phys, length });
+        log.info("Mapping {s} region virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ reg.name, virt, virt + length, phys });
 
         mapRange(virt, phys, length, reg.flags);
     }
