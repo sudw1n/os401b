@@ -101,6 +101,7 @@ fn setHandlers() void {
 
 fn getVector(comptime vector: u8) ?InterruptServiceRoutine {
     return switch (vector) {
+        inline 0xF0...0xFF => lapicTest,
         inline 2, 9, 15, 20...31 => null,
         else => blk: {
             break :blk struct {
@@ -130,6 +131,10 @@ fn getVector(comptime vector: u8) ?InterruptServiceRoutine {
             }.func;
         },
     };
+}
+
+fn lapicTest() callconv(.Naked) noreturn {
+    cpu.hlt();
 }
 
 export fn interruptCommon() callconv(.Naked) void {

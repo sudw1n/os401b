@@ -10,6 +10,78 @@ const Leaf = cpu.Leaf;
 
 const Msr = registers.Msr;
 
+// TODO: handle X2APIC and IPI
+
+/// Offsets for the APIC registers from the base address
+pub const ApicOffsets = enum(u32) {
+    /// Contains the physical ID of the local APIC
+    LocalId = 0x20,
+    /// Contains some miscellaneous config for the local APIC, including the enable/disable flag.
+    ///
+    /// The register has the following format:
+    /// Bits 0-7 (Spurious vector): Determine vector number (IDT entry) for the spurious interrupt
+    /// Bit 8 (APIC Software enable/disable): Software toggle for enabling the local APIC
+    /// Bit 9 (Focus Processor checking): Optional feature (may be unavailable) but indicates that
+    /// some interrupts can be routed according to a list of priorities. Leave it cleared to
+    /// ignore.
+    /// Bits 10-31 (Reserved)
+    ///
+    /// The spurious vector is writable only in the first 9 bits, the rest is read-only.
+    /// Also note that the spurious vector entry on old CPUs have the upper 4 bits forced to 1,
+    /// meaning the vector must be between 0xF0 and 0xFF.
+    SpuriousInterruptVector = 0xF0,
+    /// End of Interrupt
+    ///
+    /// Once an interrupt for the LAPIC is served, it won't send any further interrupts until the
+    /// EOI signal is sent. To do this, we write 0 to this EOI register and the LAPIC will resume
+    /// sending interrupts to the processor.
+    Eoi = 0xB0,
+
+    // LVT entries:
+
+    // For the 32-bit entries (all except Timer's upper half), bits are laid out as:
+    // Bits 0-7:  Interrupt Vector. This is the IDT entry we want to trigger for this interrupt.
+    // Bits 8-10: Delivery mode. Determines how the APIC should present the interrupt to the
+    //            processor. The fixed mode (0b000) is fine in almost all cases.
+    // Bit 11:    Destination mode, can be either physical or logical.
+    // Bit 12:    Delivery status (read only), whether the interrupt has been served or not.
+    // Bit 13:    Pin polarity: 0 is active-high, 1 is level-triggered.
+    // Bit 14:    Remote IRR (read only) used by the APIC for managing level-triggered interrupts.
+    // Bit 15:    Trigger mode: 0 is edge-triggered, 1 is level-triggered.
+    // Bit 16:    Interrupt mask, 1 means the interrupt is disabled, 0 is enabled.
+
+    /// Used for controlling the LAPIC timer
+    ///
+    /// This is 64-bits wide split across two 32-bit registers
+    Timer = 0x320,
+    /// Used for configuring interrupts when certain therman conditions are met
+    ///
+    /// This is 32-bits wide
+    Thermal = 0x330,
+    /// Allows an interrupt to be generated when a performance counter overflows
+    ///
+    /// This is 32-bits wide
+    PerfCounter = 0x340,
+    /// Specifies the interrupt delivery when an interrupt is signaled on LINT0 pin
+    /// (emulates IRQ0 from PIC)
+    ///
+    /// This is 32-bits wide
+    LInt0 = 0x350,
+    /// Specifies the interrupt delivery when an interrupt is signaled on LINT1 pin
+    /// (usually NMI)
+    ///
+    /// This is 32-bits wide
+    LInt1 = 0x360,
+    /// Configures how the local APIC should report an internal error.
+    ///
+    /// This is 32-bits wide
+    Error = 0x370,
+
+    pub fn get(self: ApicOffsets, comptime T: type, base: u64) *T {
+        return @ptrFromInt(base + @intFromEnum(self));
+    }
+};
+
 pub fn init() void {
     log.debug("checking APIC support", .{});
     if (!checkApic()) {
@@ -35,6 +107,11 @@ pub fn init() void {
     });
     paging.mapPage(apic_base_virt, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
     log.debug("APIC base address mapped", .{});
+
+    log.debug("enabling LAPIC {d}", .{Apic.LocalId.get(u8, apic_base_virt).*});
+    const svt = Apic.SpuriousInterruptVector.get(u32, apic_base_virt);
+    svt.* |= 0x1F1; // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
+    log.debug("enabled LAPIC", .{});
 }
 
 pub fn checkApic() bool {
