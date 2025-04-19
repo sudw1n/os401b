@@ -16,7 +16,7 @@ KERNEL_DIR                 := kernel
 KERNEL_BIN                 := $(KERNEL_DIR)/zig-out/bin/kernel
 
 # Zig compiler flags.
-ZIG_FLAGS                  := -Doptimize=Debug
+ZIG_FLAGS                  := -Doptimize=ReleaseSafe
 
 QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
