@@ -133,3 +133,17 @@ pub const Rflags = packed struct(u64) {
         }
     }
 };
+
+// Model Specific Registers
+pub const Msr = enum(u32) {
+    /// Contains base address of the LAPIC registers
+    ///
+    /// This register contains the following information:
+    ///  Bits 0:7: reserved.
+    ///  Bit 8: if set, it means that the processor is the Bootstrap Processor (BSP).
+    ///  Bits 9:10: reserved.
+    ///  Bit 11: APIC global enable. This bit can be cleared to disable the local APIC for this processor.
+    ///  Bits 12:31: Contains the base address of the local APIC for this processor core.
+    ///  Bits 32:63: reserved.
+    IA32_APIC_BASE = 0x1B,
+};

@@ -1,5 +1,6 @@
 const std = @import("std");
 const gdt = @import("gdt.zig");
+const registers = @import("registers.zig");
 
 // TODO: modularize this. maybe registers stuff in a separate module?
 
@@ -118,4 +119,18 @@ pub fn cpuid(leaf_id: u32, subid: u32) Leaf {
           [_] "{ecx}" (subid),
     );
     return .{ .eax = eax, .ebx = ebx, .ecx = ecx, .edx = edx };
+}
+
+/// Read a 64‑bit MSR
+pub inline fn rdmsr(msr: registers.Msr) u64 {
+    var low: u32 = undefined;
+    var high: u32 = undefined;
+    asm volatile (
+        \\ rdmsr
+        : [low] "={eax}" (low), // EAX ← low 32 bits
+          [high] "={edx}" (high), // EDX ← high 32 bits
+        : [msr] "{ecx}" (msr), // ECX ← MSR index
+        : "memory" // prevent reordering around MSR access
+    );
+    return (@as(u64, high) << 32) | low;
 }
