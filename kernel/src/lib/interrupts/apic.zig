@@ -95,11 +95,11 @@ pub fn init() void {
         log.err("APIC not supported", .{});
         return;
     }
-    log.info("APIC seems to be supported", .{});
+    log.debug("APIC seems to be supported", .{});
 
     log.debug("disabling the 8259 PIC", .{});
     disablePic();
-    log.info("8259 PIC disabled", .{});
+    log.debug("8259 PIC disabled", .{});
 
     log.debug("retrieving APIC base address", .{});
     const apic_msr = cpu.rdmsr(Msr.IA32_APIC_BASE);
@@ -107,13 +107,14 @@ pub fn init() void {
     const apic_base_phys = apic_msr & 0xfffff000;
     log.debug("APIC base address: {x:0>16}", .{apic_base_phys});
     apic_base = paging.physToVirtRaw(apic_base_phys);
-    log.info("Mapping APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
+    const pagingLog = std.log.scoped(.paging);
+    pagingLog.info("Mapping APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
         apic_base,
         apic_base + paging.PAGE_SIZE,
         apic_base_phys,
     });
     paging.mapPage(apic_base, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
-    log.debug("APIC base addmapped", .{});
+    log.debug("APIC base address mapped", .{});
 }
 
 const SPURIOUS_VECTOR = 0xF0;
