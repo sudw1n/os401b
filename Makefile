@@ -15,15 +15,17 @@ EFI_DIR                    := $(ISO_DIR)/EFI/BOOT
 KERNEL_DIR                 := kernel
 KERNEL_BIN                 := $(KERNEL_DIR)/zig-out/bin/kernel
 
+RAM_SIZE_MiB               := 256
+
 # Zig compiler flags.
-ZIG_FLAGS                  := -Doptimize=ReleaseSafe
+ZIG_FLAGS                  := -Doptimize=ReleaseSafe -Dmemory=$(RAM_SIZE_MiB) -Dpage_size=4096
 
 QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
 # memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
 # generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
-QEMU_COMMON_FLAGS          := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -serial stdio -no-reboot -no-shutdown
-QEMU_DEBUG_FLAGS           := -M q35 -m 128M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -no-reboot -no-shutdown -S -s -serial file:debug_log
+QEMU_COMMON_FLAGS          := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -serial stdio -no-reboot -no-shutdown
+QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -no-reboot -no-shutdown -S -s -serial file:debug_log
 
 $(BUILD_DIR):
 	@mkdir $(BUILD_DIR)
