@@ -10,6 +10,8 @@ const Leaf = cpu.Leaf;
 
 const Msr = registers.Msr;
 
+var apic_base: u64 = 0;
+
 // TODO: handle X2APIC and IPI
 
 /// Offsets for the APIC registers from the base address
@@ -40,16 +42,21 @@ pub const ApicOffsets = enum(u32) {
     // LVT entries:
 
     // For the 32-bit entries (all except Timer's upper half), bits are laid out as:
-    // Bits 0-7:  Interrupt Vector. This is the IDT entry we want to trigger for this interrupt.
+    // Bits 0-7:  Interrupt Vector. This is the IDT entry that will be invoked.
     // Bits 8-10: Delivery mode. Determines how the APIC should present the interrupt to the
-    //            processor. The fixed mode (0b000) is fine in almost all cases.
-    // Bit 11:    Destination mode, can be either physical or logical.
+    //            processor. The fixed mode (0b000) is for normal interrupts and others (NMI, SMI,
+    //            INIT) are special. Fixed mode is fine in almost all cases.
+    // Bit 11:    Destination mode, can be either physical or logical addressing (rarely changed).
     // Bit 12:    Delivery status (read only), whether the interrupt has been served or not.
     // Bit 13:    Pin polarity: 0 is active-high, 1 is level-triggered.
-    // Bit 14:    Remote IRR (read only) used by the APIC for managing level-triggered interrupts.
+    // Bit 14:    Remote IRR (read only) used by the APIC for tracking level-triggered interrupts state.
     // Bit 15:    Trigger mode: 0 is edge-triggered, 1 is level-triggered.
     // Bit 16:    Interrupt mask, 1 means the interrupt is disabled, 0 is enabled.
+    //
+    // All higher bits are reserved.
 
+    ICR_LOW = 0x300,
+    ICR_HIGH = 0x310,
     /// Used for controlling the LAPIC timer
     ///
     /// This is 64-bits wide split across two 32-bit registers
@@ -99,19 +106,71 @@ pub fn init() void {
     // extract the base address from the MSR (bits 12-31)
     const apic_base_phys = apic_msr & 0xfffff000;
     log.debug("APIC base address: {x:0>16}", .{apic_base_phys});
-    const apic_base_virt = paging.physToVirtRaw(apic_base_phys);
+    apic_base = paging.physToVirtRaw(apic_base_phys);
     log.info("Mapping APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
-        apic_base_virt,
-        apic_base_virt + paging.PAGE_SIZE,
+        apic_base,
+        apic_base + paging.PAGE_SIZE,
         apic_base_phys,
     });
-    paging.mapPage(apic_base_virt, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
-    log.debug("APIC base address mapped", .{});
+    paging.mapPage(apic_base, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
+    log.debug("APIC base addmapped", .{});
+}
 
-    log.debug("enabling LAPIC {d}", .{Apic.LocalId.get(u8, apic_base_virt).*});
-    const svt = Apic.SpuriousInterruptVector.get(u32, apic_base_virt);
-    svt.* |= 0x1F1; // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
+const SPURIOUS_VECTOR = 0xF0;
+
+fn setupVectors() void {
+    log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, apic_base).*, SPURIOUS_VECTOR });
+    const svt = ApicOffsets.SpuriousInterruptVector.get(u32, apic_base);
+    svt.* |= (1 << 8) | (SPURIOUS_VECTOR); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
     log.debug("enabled LAPIC", .{});
+}
+
+pub fn sendEoi() void {
+    log.debug("sending EOI to LAPIC", .{});
+    const eoi = ApicOffsets.Eoi.get(u32, apic_base);
+    eoi.* = 0; // send EOI
+    log.debug("EOI sent", .{});
+}
+
+/// There is a shorthand field in the ICR which overrides the destination id. It's available
+/// in bits 19:18 and has the following definition:
+const IcrShorthand = enum(u2) {
+    /// No shorthand, use the destination id.
+    NoShorthand = 0b00,
+    /// Send this IPI to ourselves, no one else.
+    Self = 0b01,
+    /// Send this IPI to all LAPICs, including ourselves.
+    AllIncludingSelf = 0b10,
+    /// Send this IPI to all LAPICs, but not ourselves.
+    AllExcludingSelf = 0b11,
+
+    pub fn get(self: IcrShorthand) u32 {
+        return @as(u32, @intFromEnum(self)) << 18;
+    }
+};
+
+pub fn lapicSendIpi(dest_id: u32, vector: u8) void {
+    log.debug("sending IPI to LAPIC {d} with vector {x:0>2}", .{ dest_id, vector });
+    const high = ApicOffsets.ICR_HIGH.get(u32, apic_base);
+    const low = ApicOffsets.ICR_LOW.get(u32, apic_base);
+    //  0b00: no shorthand, use the destination id.
+    //  0b01: send this IPI to ourselves, no one else.
+    //  0b10: send this IPI to all LAPICs, including ourselves.
+    //  0b11: send this IPI to all LAPICs, but not ourselves.
+
+    // the IPI is sent when the lower half is written to, so we should setup the destination in the
+    // higher half first before writing the vector in the lower half.
+
+    // we are going to send the IPI to ourselves, so we set the shorthand field to 0b01
+    // which also means we don't need to set the destination id.
+    high.* = 0;
+
+    low.* = @as(u32, vector) | IcrShorthand.AllExcludingSelf.get();
+    // poll Delivery Status (bit 12) until it clears
+    while ((low.* & (1 << 12)) != 0) {
+        // wait
+    }
+    log.debug("IPI sent", .{});
 }
 
 pub fn checkApic() bool {
