@@ -9,6 +9,7 @@
 const std = @import("std");
 const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
+const apic = @import("apic.zig");
 const registers = @import("../registers.zig");
 const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
@@ -101,7 +102,6 @@ fn setHandlers() void {
 
 fn getVector(comptime vector: u8) ?InterruptServiceRoutine {
     return switch (vector) {
-        inline 0xF0...0xFF => lapicTest,
         inline 2, 9, 15, 20...31 => null,
         else => blk: {
             break :blk struct {
@@ -131,10 +131,6 @@ fn getVector(comptime vector: u8) ?InterruptServiceRoutine {
             }.func;
         },
     };
-}
-
-fn lapicTest() callconv(.Naked) noreturn {
-    cpu.hlt();
 }
 
 export fn interruptCommon() callconv(.Naked) void {
@@ -223,6 +219,14 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
         },
         false => "unhandled interrupt",
     };
+
+    switch (frame.vector_number) {
+        0xF0...0xFF => {
+            // since this is an APIC interrupt, we need to send EOI
+            apic.sendEoi();
+        },
+        else => {},
+    }
 
     const cleanLog = std.log.scoped(.none);
     cleanLog.debug("{}", .{frame});
