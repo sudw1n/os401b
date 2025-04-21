@@ -84,7 +84,7 @@ $(ISO_FILE): $(DIST_DIR)/limine kernel | $(ISO_DIR) $(EFI_DIR)
 
 
 $(DIST_DIR)/limine: | $(DIST_DIR)
-	git clone --depth 1 --branch=v8.x-binary https://github.com/limine-bootloader/limine.git $(LIMINE_DIR)
+	git clone --depth 1 --branch=v9.x-binary https://github.com/limine-bootloader/limine.git $(LIMINE_DIR)
 	$(MAKE) -C $(LIMINE_DIR)
 
 .PHONY: kernel
