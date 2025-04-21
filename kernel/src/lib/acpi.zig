@@ -47,10 +47,10 @@ pub const Xsdt = extern struct {
     /// Standard ACPI table header common to all SDTs.
     sdt_header: AcpiSdtHeader,
     /// Returns a slice of the 64‑bit physical addresses of each entry in the XSDT.
-    pub fn getEntries(self: *Xsdt) []u64 {
+    pub fn getEntries(self: *Xsdt) []align(1) u64 {
         const entry_count = self.getEntryCount();
         log.debug("XSDT entry count: {d}", .{entry_count});
-        return @as([*]u64, @ptrFromInt(@intFromPtr(self) + @sizeOf(AcpiSdtHeader)))[0..entry_count];
+        return @as([*]align(1) u64, @ptrFromInt(@intFromPtr(self) + @sizeOf(AcpiSdtHeader)))[0..entry_count];
     }
     /// Returns a pointer to the ACPI SDT header at index `n`, or null if out of range.
     ///
