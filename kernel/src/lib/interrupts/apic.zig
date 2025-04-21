@@ -101,7 +101,7 @@ pub fn init() void {
     log.debug("APIC base address mapped", .{});
 }
 
-const SPURIOUS_VECTOR = 0xF0;
+const SPURIOUS_VECTOR = 0xFF;
 
 /// LVT entries.
 //
