@@ -39,22 +39,6 @@ pub const ApicOffsets = enum(u32) {
     /// sending interrupts to the processor.
     Eoi = 0xB0,
 
-    // LVT entries:
-
-    // For the 32-bit entries (all except Timer's upper half), bits are laid out as:
-    // Bits 0-7:  Interrupt Vector. This is the IDT entry that will be invoked.
-    // Bits 8-10: Delivery mode. Determines how the APIC should present the interrupt to the
-    //            processor. The fixed mode (0b000) is for normal interrupts and others (NMI, SMI,
-    //            INIT) are special. Fixed mode is fine in almost all cases.
-    // Bit 11:    Destination mode, can be either physical or logical addressing (rarely changed).
-    // Bit 12:    Delivery status (read only), whether the interrupt has been served or not.
-    // Bit 13:    Pin polarity: 0 is active-high, 1 is level-triggered.
-    // Bit 14:    Remote IRR (read only) used by the APIC for tracking level-triggered interrupts state.
-    // Bit 15:    Trigger mode: 0 is edge-triggered, 1 is level-triggered.
-    // Bit 16:    Interrupt mask, 1 means the interrupt is disabled, 0 is enabled.
-    //
-    // All higher bits are reserved.
-
     ICR_LOW = 0x300,
     ICR_HIGH = 0x310,
     /// Used for controlling the LAPIC timer
@@ -118,6 +102,61 @@ pub fn init() void {
 }
 
 const SPURIOUS_VECTOR = 0xF0;
+
+/// LVT entries.
+//
+/// For the 32-bit entries (all except Timer's upper half), bits are laid out as:
+/// Bits 0-7:  Interrupt Vector. This is the IDT entry that will be invoked.
+/// Bits 8-10: Delivery mode. Determines how the APIC should present the interrupt to the
+///            processor. The fixed mode (0b000) is for normal interrupts and others (NMI, SMI,
+///            INIT) are special. Fixed mode is fine in almost all cases.
+/// Bit 11:    Destination mode, can be either physical or logical addressing (rarely changed).
+/// Bit 12:    Delivery status (read only), whether the interrupt has been served or not.
+/// Bit 13:    Pin polarity: 0 is active-high, 1 is level-triggered.
+/// Bit 14:    Remote IRR (read only) used by the APIC for tracking level-triggered interrupts state.
+/// Bit 15:    Trigger mode: 0 is edge-triggered, 1 is level-triggered.
+/// Bit 16:    Interrupt mask, 1 means the interrupt is disabled, 0 is enabled.
+///
+/// All higher bits are reserved.
+const Lvt = packed struct {
+    /// Interrupt vector
+    vector: u8,
+    /// Delivery mode
+    delivery_mode: u3,
+    /// Destination mode
+    destination_mode: u1,
+    /// Delivery status (read-only)
+    delivery_status: u1,
+    /// Pin polarity
+    pin_polarity: u1,
+    /// Remote IRR (read-only)
+    remote_irr: u1,
+    /// Trigger mode
+    trigger_mode: u1,
+    /// Interrupt mask
+    interrupt_mask: u1,
+    reserved: u16,
+    pub fn init(vector: u8, mask: bool) Lvt {
+        return Lvt{
+            .vector = vector,
+            // fixed
+            .delivery_mode = 0b000,
+            // physical
+            .destination_mode = 0b0,
+            // active-high
+            .pin_polarity = 0,
+            // edge-triggered
+            .trigger_mode = 0,
+            .interrupt_mask = @intFromBool(mask),
+
+            // read-only / reserved bits
+            // APIC spec requires to zero out all of the read‑only and reserved bits
+            .delivery_status = 0,
+            .remote_irr = 0,
+            .reserved = 0,
+        };
+    }
+};
 
 fn setupVectors() void {
     log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, apic_base).*, SPURIOUS_VECTOR });
