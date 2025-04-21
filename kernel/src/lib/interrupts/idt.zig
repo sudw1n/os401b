@@ -16,6 +16,8 @@ const Rflags = registers.Rflags;
 
 const log = std.log.scoped(.idt);
 
+const ApicInterrupt = apic.ApicInterrupt;
+
 const SegmentSelector = gdtlib.SegmentSelector;
 const Dpl = gdtlib.Dpl;
 const SystemTableRegister = cpu.SystemTableRegister;
@@ -209,6 +211,12 @@ export fn interruptCommon() callconv(.Naked) void {
 }
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
+    if (frame.vector_number == ApicInterrupt.Spurious.get()) {
+        log.info("Received spurious interrupt, ignoring...");
+        // this is a spurious interrupt, so we can ignore it
+        return;
+    }
+
     log.info("Received interrupt 0x{x}", .{frame.vector_number});
 
     const panicMsg = switch (Exception.is(frame.vector_number)) {
@@ -221,7 +229,7 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
     };
 
     switch (frame.vector_number) {
-        0xF0...0xFF => {
+        apic.SPURIOUS_VECTOR...0xFF => {
             // since this is an APIC interrupt, we need to send EOI
             apic.sendEoi();
         },

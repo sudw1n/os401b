@@ -101,7 +101,21 @@ pub fn init() void {
     log.debug("APIC base address mapped", .{});
 }
 
-const SPURIOUS_VECTOR = 0xFF;
+/// The various interrupt vectors handled by APIC
+pub const ApicInterrupt = enum(u8) {
+    Spurious = 0xFF,
+    /// Retrieve the vector as an u8
+    pub fn get(self: ApicInterrupt) u8 {
+        return @intFromEnum(self);
+    }
+    /// Is the vector handled by APIC
+    pub fn is(vector: u8) bool {
+        return switch (vector) {
+            0xF0...0xFF => true,
+            else => false,
+        };
+    }
+};
 
 /// LVT entries.
 //
@@ -161,7 +175,7 @@ const Lvt = packed struct {
 fn setupVectors() void {
     log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, apic_base).*, SPURIOUS_VECTOR });
     const svt = ApicOffsets.SpuriousInterruptVector.get(u32, apic_base);
-    svt.* |= (1 << 8) | (SPURIOUS_VECTOR); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
+    svt.* |= (1 << 8) | (ApicInterrupt.Spurious); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
     log.debug("enabled LAPIC", .{});
 }
 
