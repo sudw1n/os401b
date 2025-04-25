@@ -49,7 +49,6 @@ pub const Xsdt = extern struct {
     /// Returns a slice of the 64‑bit physical addresses of each entry in the XSDT.
     pub fn getEntries(self: *Xsdt) []align(1) u64 {
         const entry_count = self.getEntryCount();
-        log.debug("XSDT entry count: {d}", .{entry_count});
         return @as([*]align(1) u64, @ptrFromInt(@intFromPtr(self) + @sizeOf(AcpiSdtHeader)))[0..entry_count];
     }
     /// Returns a pointer to the ACPI SDT header at index `n`, or null if out of range.
@@ -69,13 +68,13 @@ pub const Xsdt = extern struct {
     /// Scans all entries for an SDT whose signature matches `signature` or null if not found.
     pub fn findSdtHeader(self: *Xsdt, signature: []const u8) ?*AcpiSdtHeader {
         const entries = self.getEntries();
-        log.debug("Searching XSDT for signature {s}", .{signature});
+        log.info("Searching XSDT for signature {s}", .{signature});
         for (0.., entries) |i, entry_addr| {
             log.debug("Examining entry {d} at phys 0x{x:0>16}", .{ i, entry_addr });
             const entry_virt = paging.physToVirtRaw(entry_addr);
             const entry: *AcpiSdtHeader = @ptrFromInt(entry_virt);
-            if (std.mem.eql(u8, entry.signature, signature)) {
-                log.debug("Found signature {s} at index {d}", .{ signature, i });
+            if (std.mem.eql(u8, &entry.signature, signature)) {
+                log.info("Found signature {s} at index {d}", .{ signature, i });
                 return entry;
             }
         }
@@ -85,6 +84,186 @@ pub const Xsdt = extern struct {
     fn getEntryCount(self: *Xsdt) u64 {
         return (self.sdt_header.length - @sizeOf(AcpiSdtHeader)) / @sizeOf(u64);
     }
+};
+
+// source: https://wiki.osdev.org/MADT
+
+/// Represents the ACPI Multiple APIC Description Table (MADT)
+pub const Madt = extern struct {
+    /// Standard ACPI table header common to all SDTs.
+    sdt_header: AcpiSdtHeader align(1),
+    /// Local APIC address
+    local_apic_address: u32 align(1),
+    /// Flags
+    ///
+    /// - Bit 0: 1 if the local APIC is enabled
+    flags: u32 align(1),
+
+    pub fn find(self: *Madt, entry_type: MadtEntryType) ?MadtEntry {
+        const table_start = @intFromPtr(self);
+        // entries start after the MADT header
+        const entries_start = table_start + @sizeOf(Madt);
+        const table_end = table_start + self.sdt_header.length;
+
+        log.info("Searching MADT for entry type `{s}`", .{@tagName(entry_type)});
+
+        var addr: u64 = entries_start;
+        while (addr < table_end) {
+            const hdr: *MadtEntryHeader = @ptrFromInt(addr);
+            log.debug("Examining entry at address 0x{x:0>16}: `{s}`", .{ addr, @tagName(hdr.entry_type) });
+            // skip the header so that we get the entry
+            const entry_ptr = addr + @sizeOf(MadtEntryHeader);
+            if (entry_type == hdr.entry_type) {
+                log.info("Found entry at address 0x{x:0>16}", .{entry_ptr});
+                return switch (hdr.entry_type) {
+                    .ProcessorLocalApic => .{ .ProcessorLocalApic = @ptrFromInt(entry_ptr) },
+                    .IoApic => .{ .IoApic = @ptrFromInt(entry_ptr) },
+                    .IoApicIntSrcOverride => .{ .IoApicIntSrcOverride = @ptrFromInt(entry_ptr) },
+                    .IoApicNmiSrc => .{ .IoApicNmiSrc = @ptrFromInt(entry_ptr) },
+                    .LApicNmi => .{ .LApicNmi = @ptrFromInt(entry_ptr) },
+                    .LApicAddrOverride => .{ .LApicAddrOverride = @ptrFromInt(entry_ptr) },
+                    .LX2Apic => .{ .LX2Apic = @ptrFromInt(entry_ptr) },
+                };
+            }
+            // if not desired entry, skip forward by the record length
+            addr += hdr.record_length;
+        }
+        log.err("Entry not found", .{});
+        return null;
+    }
+};
+
+pub const MadtEntry = union(MadtEntryType) {
+    ProcessorLocalApic: *LApic,
+    IoApic: *IoApic,
+    IoApicIntSrcOverride: *IoApicIntSrcOverride,
+    IoApicNmiSrc: *IoApicNmiSrc,
+    LApicNmi: *LApicNmi,
+    LApicAddrOverride: *LApicAddrOverride,
+    LX2Apic: *LX2Apic,
+};
+
+/// Processor Local APIC
+///
+/// This type represents a single logical processor and its local interrupt controller.
+pub const LApic = extern struct {
+    /// ACPI Processor ID
+    processor_id: u8 align(1),
+    /// APIC ID
+    id: u8 align(1),
+    /// Flags
+    ///
+    /// - Bit 0: 1 if the processor is enabled
+    /// - Bit 1: 1 if the processor is online capable
+    flags: u32 align(1),
+};
+
+/// I/O APIC
+///
+/// This type represents an I/O APIC.
+pub const IoApic = extern struct {
+    /// I/O APIC ID
+    id: u8 align(1),
+    reserved: u8 align(1),
+    /// I/O APIC address
+    address: u32 align(1),
+    /// Global system interrupt base
+    gsi_base: u32 align(1),
+};
+
+/// I/O APIC Interrupt Source Override
+///
+/// This entry type contains the data for an Interrupt Source Override, explaining how IRQ
+/// sources are mapped to global system interrupts.
+pub const IoApicIntSrcOverride = extern struct {
+    /// Bus source
+    bus_source: u8 align(1),
+    /// IRQ source
+    irq_source: u8 align(1),
+    /// Global system interrupt
+    gsi: u32 align(1),
+    /// Flags
+    flags: u16 align(1),
+};
+
+/// I/O APIC Non-maskable interrupt source
+///
+/// Specifies which I/O APIC interrupt inputs should be enabled as non-maskable.
+pub const IoApicNmiSrc = extern struct {
+    /// NMI Source
+    nmi_src: u8 align(1),
+    reserved: u8 align(1),
+    /// Flags
+    /// - Bit 1: if 1 then the interrupt is active when low
+    /// - Bit 3: if 1 then the interrupt is level triggered
+    flags: u16 align(1),
+    /// Global System Interrupt
+    gsi: u32 align(1),
+};
+
+/// Local APIC Non-maskable interrupts
+///
+/// These can be configured with the LINT0 and LINT1 entries in the LVT of the relevant
+/// processor's LAPIC.
+pub const LApicNmi = extern struct {
+    /// ACPI Processor ID (0xFF means all processors)
+    processor_id: u8 align(1),
+    /// Flags
+    /// - Bit 0: if 1 then the interrupt is active when low
+    /// - Bit 1: if 1 then the interrupt is level triggered
+    flags: u16 align(1),
+    /// LINT# (0 or 1),
+    lint_pin: u8 align(1),
+};
+
+/// Local APIC Address Override
+///
+/// This entry type is used to override the LAPIC address in the MADT header. There can only be
+/// one of these defined in the MADT and if defined, the 64-bit LAPIC address stored within it
+/// should be used instead of the 32-bit address stored in the MADT header.
+pub const LApicAddrOverride = extern struct {
+    reserved: u16 align(1),
+    /// 64-bit physical address of Local APIC
+    addr: u64 align(1),
+};
+
+/// Processor Local X2APIC
+///
+/// Represents a physical processor and its Local X2APIC. Identical to the LAPIC, but used only
+/// when it wouldn't be able to hold the required values.
+pub const LX2Apic = extern struct {
+    reserved: u16 align(1),
+    /// Processor's local x2APIC ID
+    x2apic_id: u32 align(1),
+    /// Flags (same as LAPIC flags)
+    flags: u32 align(1),
+    /// ACPI ID
+    id: u32 align(1),
+};
+
+pub const MadtEntryHeader = extern struct {
+    /// Entry type
+    entry_type: MadtEntryType align(1),
+    /// Length of the entry
+    /// (including the header)
+    record_length: u8 align(1),
+};
+
+pub const MadtEntryType = enum(u8) {
+    /// Processor Local APIC
+    ProcessorLocalApic = 0,
+    /// I/O APIC
+    IoApic = 1,
+    /// I/O APIC Interrupt Source Override
+    IoApicIntSrcOverride = 2,
+    /// I/O APIC Non-maskable interrupt source
+    IoApicNmiSrc = 3,
+    /// Local APIC Non-maskable interrupts
+    LApicNmi = 4,
+    /// Local APIC Address Override
+    LApicAddrOverride = 5,
+    /// Processor Local X2APIC
+    LX2Apic = 9,
 };
 
 pub const AcpiSdtHeader = extern struct {
