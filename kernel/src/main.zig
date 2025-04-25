@@ -9,6 +9,7 @@ const idt = lib.idt;
 const apic = lib.apic;
 const registers = lib.registers;
 const paging = lib.paging;
+const acpi = lib.acpi;
 
 const Error = lib.Error;
 
@@ -17,6 +18,20 @@ const VERSION = "0.0.1";
 /// Standard Library Options
 pub const std_options = std.Options{
     .log_level = .debug,
+    .log_scope_levels = &.{
+        .{
+            .scope = .paging,
+            .level = .info,
+        },
+        .{
+            .scope = .apic,
+            .level = .info,
+        },
+        .{
+            .scope = .acpi,
+            .level = .info,
+        },
+    },
     .logFn = serial.log,
 };
 
@@ -73,10 +88,6 @@ fn init() Error!void {
     idt.init();
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Initializing the APIC", .{});
-    apic.init();
-    try term.logStepEnd(true);
-
     const memmap = lib.memmap_request.response orelse @panic("failed to get memory map response from Limine");
     if (memmap.entry_count == 0) {
         @panic("No memory map entries found from Limine");
@@ -86,6 +97,14 @@ fn init() Error!void {
     const executable_address_response = lib.executable_address_request.response orelse @panic("failed to get executable address response from Limine");
     try term.logStepBegin("Setting up new page tables", .{});
     paging.init(memmap, executable_address_response, hhdm_offset);
+    try term.logStepEnd(true);
+
+    const rsdp_response = lib.rsdp_request.response orelse @panic("failed to get RSDP response from Limine");
+    if (rsdp_response.address == 0) {
+        @panic("RSDP address is null");
+    }
+    try term.logStepBegin("Initializing APICs", .{});
+    apic.init(rsdp_response);
     try term.logStepEnd(true);
 }
 
