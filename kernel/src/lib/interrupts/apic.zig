@@ -1,16 +1,20 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
+const acpi = @import("../acpi.zig");
 const registers = @import("../registers.zig");
 const paging = @import("../memory/paging.zig");
 const term = @import("../tty/terminal.zig");
+const limine = @import("limine");
 
 const log = std.log.scoped(.apic);
+const pagingLog = std.log.scoped(.paging);
 
 const Leaf = cpu.Leaf;
 
 const Msr = registers.Msr;
 
-var apic_base: u64 = 0;
+var lapic_base: u64 = 0;
+var ioapic_base: u64 = 0;
 
 // TODO: handle X2APIC and IPI
 
@@ -73,32 +77,58 @@ pub const ApicOffsets = enum(u32) {
     }
 };
 
-pub fn init() void {
-    log.debug("checking APIC support", .{});
+pub fn init(rsdp_response: *limine.RsdpResponse) void {
+    log.info("Checking APIC support", .{});
     if (!checkApic()) {
         log.err("APIC not supported", .{});
         return;
     }
-    log.debug("APIC seems to be supported", .{});
 
-    log.debug("disabling the 8259 PIC", .{});
+    log.info("Disabling the 8259 PIC", .{});
     disablePic();
-    log.debug("8259 PIC disabled", .{});
 
-    log.debug("retrieving APIC base address", .{});
+    log.info("Initializing LAPIC", .{});
+    initLApic();
+
+    log.info("Initializing I/O APIC", .{});
+    if (!initIoApic(rsdp_response)) {
+        log.err("Failed to initialize I/O APIC", .{});
+        return;
+    }
+}
+
+fn initLApic() void {
     const apic_msr = cpu.rdmsr(Msr.IA32_APIC_BASE);
     // extract the base address from the MSR (bits 12-31)
     const apic_base_phys = apic_msr & 0xfffff000;
-    log.debug("APIC base address: {x:0>16}", .{apic_base_phys});
-    apic_base = paging.physToVirtRaw(apic_base_phys);
-    const pagingLog = std.log.scoped(.paging);
-    pagingLog.info("Mapping APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
-        apic_base,
-        apic_base + paging.PAGE_SIZE,
+    log.debug("Retrieved LAPIC base address: {x:0>16}", .{apic_base_phys});
+    lapic_base = paging.physToVirtRaw(apic_base_phys);
+    pagingLog.info("Mapping LAPIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
+        lapic_base,
+        lapic_base + paging.PAGE_SIZE,
         apic_base_phys,
     });
-    paging.mapPage(apic_base, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
-    log.debug("APIC base address mapped", .{});
+    paging.mapPage(lapic_base, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
+}
+
+fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
+    const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
+    const xsdt = rsdp.getXSDT();
+    if (xsdt.findSdtHeader("APIC")) |header| {
+        const madt: *acpi.Madt = @ptrCast(header);
+        if (madt.find(acpi.MadtEntryType.IoApic)) |entry| {
+            const ioapic_base_phys = entry.IoApic.address;
+            log.debug("Retrieved I/O APIC base address: {x:0>16}", .{ioapic_base_phys});
+            ioapic_base = paging.physToVirtRaw(entry.IoApic.address);
+            pagingLog.info("Mapping I/O APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
+                ioapic_base,
+                ioapic_base + paging.PAGE_SIZE,
+                ioapic_base_phys,
+            });
+            return true;
+        }
+    }
+    return false;
 }
 
 /// The various interrupt vectors handled by APIC
@@ -173,15 +203,15 @@ const Lvt = packed struct {
 };
 
 fn setupVectors() void {
-    log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, apic_base).*, SPURIOUS_VECTOR });
-    const svt = ApicOffsets.SpuriousInterruptVector.get(u32, apic_base);
+    log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, lapic_base).*, ApicInterrupt.Spurious.get() });
+    const svt = ApicOffsets.SpuriousInterruptVector.get(u32, lapic_base);
     svt.* |= (1 << 8) | (ApicInterrupt.Spurious); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
     log.debug("enabled LAPIC", .{});
 }
 
 pub fn sendEoi() void {
     log.debug("sending EOI to LAPIC", .{});
-    const eoi = ApicOffsets.Eoi.get(u32, apic_base);
+    const eoi = ApicOffsets.Eoi.get(u32, lapic_base);
     eoi.* = 0; // send EOI
     log.debug("EOI sent", .{});
 }
@@ -205,8 +235,8 @@ const IcrShorthand = enum(u2) {
 
 pub fn lapicSendIpi(dest_id: u32, vector: u8) void {
     log.debug("sending IPI to LAPIC {d} with vector {x:0>2}", .{ dest_id, vector });
-    const high = ApicOffsets.ICR_HIGH.get(u32, apic_base);
-    const low = ApicOffsets.ICR_LOW.get(u32, apic_base);
+    const high = ApicOffsets.ICR_HIGH.get(u32, lapic_base);
+    const low = ApicOffsets.ICR_LOW.get(u32, lapic_base);
     //  0b00: no shorthand, use the destination id.
     //  0b01: send this IPI to ourselves, no one else.
     //  0b10: send this IPI to all LAPICs, including ourselves.
