@@ -212,7 +212,7 @@ export fn interruptCommon() callconv(.Naked) void {
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
     if (frame.vector_number == ApicInterrupt.Spurious.get()) {
-        log.info("Received spurious interrupt, ignoring...");
+        log.info("Received spurious interrupt, ignoring...", .{});
         // this is a spurious interrupt, so we can ignore it
         return;
     }
