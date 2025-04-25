@@ -229,7 +229,8 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
     };
 
     switch (frame.vector_number) {
-        apic.SPURIOUS_VECTOR...0xFF => {
+        // we don't think about spurious interrupt because that has been handled above
+        0xF0...0xFF => {
             // since this is an APIC interrupt, we need to send EOI
             apic.sendEoi();
         },
