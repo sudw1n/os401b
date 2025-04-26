@@ -155,6 +155,7 @@ pub const LApic = extern struct {
     ///
     /// - Bit 0: 1 if the processor is enabled
     /// - Bit 1: 1 if the processor is online capable
+    // TODO: implement Flags for this
     flags: u32 align(1),
 };
 
@@ -183,7 +184,7 @@ pub const IoApicIntSrcOverride = extern struct {
     /// Global system interrupt
     gsi: u32 align(1),
     /// Flags
-    flags: u16 align(1),
+    flags: Flags align(1),
 };
 
 /// I/O APIC Non-maskable interrupt source
@@ -194,9 +195,7 @@ pub const IoApicNmiSrc = extern struct {
     nmi_src: u8 align(1),
     reserved: u8 align(1),
     /// Flags
-    /// - Bit 1: if 1 then the interrupt is active when low
-    /// - Bit 3: if 1 then the interrupt is level triggered
-    flags: u16 align(1),
+    flags: Flags align(1),
     /// Global System Interrupt
     gsi: u32 align(1),
 };
@@ -209,9 +208,7 @@ pub const LApicNmi = extern struct {
     /// ACPI Processor ID (0xFF means all processors)
     processor_id: u8 align(1),
     /// Flags
-    /// - Bit 0: if 1 then the interrupt is active when low
-    /// - Bit 1: if 1 then the interrupt is level triggered
-    flags: u16 align(1),
+    flags: Flags align(1),
     /// LINT# (0 or 1),
     lint_pin: u8 align(1),
 };
@@ -239,6 +236,34 @@ pub const LX2Apic = extern struct {
     flags: u32 align(1),
     /// ACPI ID
     id: u32 align(1),
+};
+
+pub const Flags = packed struct(u16) {
+    pub const Polarity = enum(u2) {
+        /// Use the default settings.
+        /// Is active-low for level-triggered interrupts.
+        Default = 0b00,
+        /// Active high
+        ActiveHigh = 0b01,
+        Reserved = 0b10,
+        /// Active low
+        ActiveLow = 0b11,
+    };
+    pub const TriggerMode = enum(u2) {
+        /// Use the default settings (edge-triggered).
+        Default = 0b00,
+        /// Edge triggered
+        EdgeTriggered = 0b01,
+        Reserved = 0b10,
+        /// Level triggered
+        LevelTriggered = 0b11,
+    };
+    /// Polarity
+    polarity: Polarity,
+    /// Trigger mode
+    trigger_mode: TriggerMode,
+    /// Reserved
+    reserved: u12 = 0,
 };
 
 pub const MadtEntryHeader = extern struct {
