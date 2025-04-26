@@ -155,23 +155,27 @@ const IoRegisters = enum(u8) {
     IoApicArbitrationId = 0x02,
     /// I/O APIC redirection table base address
     IoApicRedirectionTableBase = 0x10,
+
+    pub fn get(self: IoRegisters) u8 {
+        return @intFromEnum(self);
+    }
 };
 
 // if we want to read/write a register of the I/O APIC, we need to:
 // 1. write the register number to the IOREGSEL register
 // 2. read/write the value to the IOWIN register
 
-fn readIoApicRegister(comptime T: type, reg: IoRegisters) T {
+fn readIoApicRegister(comptime T: type, reg: u8) T {
     const regsel: *u8 = @ptrFromInt(ioapic_base + IOREGSEL);
     const window: *T = @ptrFromInt(ioapic_base + IOWIN);
-    regsel.* = @intFromEnum(reg);
+    regsel.* = reg;
     return window.*;
 }
 
-fn writeIoApicRegister(comptime T: type, reg: IoRegisters, value: T) void {
+fn writeIoApicRegister(comptime T: type, reg: u8, value: T) void {
     const regsel: *u8 = @ptrFromInt(ioapic_base + IOREGSEL);
     const window: *T = @ptrFromInt(ioapic_base + IOWIN);
-    regsel.* = @intFromEnum(reg);
+    regsel.* = reg;
     window.* = value;
 }
 
