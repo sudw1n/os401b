@@ -269,7 +269,7 @@ const Lvt = packed struct(u32) {
     }
 };
 
-fn setupVectors() void {
+fn setupLApicVectors() void {
     log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, lapic_base).*, LApicInterrupt.Spurious.get() });
     const svt = ApicOffsets.SpuriousInterruptVector.get(u32, lapic_base);
     svt.* |= (1 << 8) | (LApicInterrupt.Spurious); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
