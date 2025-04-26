@@ -133,10 +133,10 @@ fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
 }
 
 /// The various interrupt vectors handled by APIC
-pub const ApicInterrupt = enum(u8) {
+pub const LApicInterrupt = enum(u8) {
     Spurious = 0xFF,
     /// Retrieve the vector as an u8
-    pub fn get(self: ApicInterrupt) u8 {
+    pub fn get(self: LApicInterrupt) u8 {
         return @intFromEnum(self);
     }
     /// Is the vector handled by APIC
@@ -204,9 +204,9 @@ const Lvt = packed struct {
 };
 
 fn setupVectors() void {
-    log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, lapic_base).*, ApicInterrupt.Spurious.get() });
+    log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, lapic_base).*, LApicInterrupt.Spurious.get() });
     const svt = ApicOffsets.SpuriousInterruptVector.get(u32, lapic_base);
-    svt.* |= (1 << 8) | (ApicInterrupt.Spurious); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
+    svt.* |= (1 << 8) | (LApicInterrupt.Spurious); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
     log.debug("enabled LAPIC", .{});
 }
 

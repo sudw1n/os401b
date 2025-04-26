@@ -16,7 +16,7 @@ const Rflags = registers.Rflags;
 
 const log = std.log.scoped(.idt);
 
-const ApicInterrupt = apic.ApicInterrupt;
+const ApicInterrupt = apic.LApicInterrupt;
 
 const SegmentSelector = gdtlib.SegmentSelector;
 const Dpl = gdtlib.Dpl;
