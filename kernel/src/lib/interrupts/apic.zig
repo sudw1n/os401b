@@ -16,7 +16,7 @@ const Msr = registers.Msr;
 var lapic_base: u64 = 0;
 var ioapic_base: u64 = 0;
 
-// TODO: handle X2APIC and IPI
+// TODO: handle X2APIC and come up with better abstraction designs for this module
 
 /// Offsets for the APIC registers from the base address
 pub const ApicOffsets = enum(u32) {
@@ -125,6 +125,7 @@ fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
                 ioapic_base + paging.PAGE_SIZE,
                 ioapic_base_phys,
             });
+            paging.mapPage(ioapic_base, ioapic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
             return true;
         }
     }
