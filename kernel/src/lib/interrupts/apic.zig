@@ -118,6 +118,7 @@ fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
     const xsdt = rsdp.getXSDT();
     if (xsdt.findSdtHeader("APIC")) |header| {
         const madt: *acpi.Madt = @ptrCast(header);
+
         var iterator = madt.iterator();
         if (iterator.findNext(acpi.MadtEntryType.IoApic)) |entry| {
             const ioapic_base_phys = entry.IoApic.address;
@@ -129,11 +130,6 @@ fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
                 ioapic_base_phys,
             });
             paging.mapPage(ioapic_base, ioapic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
-
-            const ioapicver = readIoApicRegister(u32, IoRegisters.IoApicVersion);
-            const number_of_inputs = ((ioapicver >> 16) & 0xFF) + 1;
-            log.debug("GSI base: {d}", .{entry.IoApic.gsi_base});
-            log.debug("Number of inputs: {d}", .{number_of_inputs});
             return true;
         }
     }
