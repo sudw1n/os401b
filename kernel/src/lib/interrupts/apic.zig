@@ -179,6 +179,25 @@ fn writeIoApicRegister(comptime T: type, reg: u8, value: T) void {
     window.* = value;
 }
 
+/// Write a single I/O APIC redirection entry.
+///
+///
+/// pin: GSI number (0..number_of_inputs-1) i.e. the target pin for APIC
+/// lvt: LVT entry to be written
+/// dest_apic: the LAPIC ID to forward the interrupts to
+fn setIoRedirection(pin: u32, lvt: Lvt, dest_apic: u8) void {
+    const base = @intFromEnum(IoRegisters.IoApicRedirectionTableBase);
+    const low_index = base + @as(u8, @intCast(pin)) * 2;
+    const high_index = low_index + 1;
+
+    // write the low dword i.e. LVT
+    writeIoApicRegister(u32, low_index, @bitCast(lvt));
+    // write high dword i.e. destination APIC ID (overall bits 56-63, but for the dword this would
+    // mean position 24)
+    const high_dword = @as(u32, dest_apic) << 24;
+    writeIoApicRegister(u32, high_index, high_dword);
+}
+
 /// The various interrupt vectors handled by APIC
 pub const LApicInterrupt = enum(u8) {
     Spurious = 0xFF,
