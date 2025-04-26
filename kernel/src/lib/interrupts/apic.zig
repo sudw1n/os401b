@@ -258,7 +258,7 @@ pub fn lapicSendIpi(dest_id: u32, vector: u8) void {
     log.debug("IPI sent", .{});
 }
 
-pub fn checkApic() bool {
+fn checkApic() bool {
     const leaf = cpu.cpuid(1, 0);
     // check the 9th bit
     return (leaf.edx & (1 << 8)) != 0;
