@@ -229,7 +229,7 @@ pub const LApicInterrupt = enum(u8) {
 /// Bit 16:    Interrupt mask, 1 means the interrupt is disabled, 0 is enabled.
 ///
 /// All higher bits are reserved.
-const Lvt = packed struct {
+const Lvt = packed struct(u32) {
     /// Interrupt vector
     vector: u8,
     /// Delivery mode
@@ -246,7 +246,7 @@ const Lvt = packed struct {
     trigger_mode: u1,
     /// Interrupt mask
     interrupt_mask: u1,
-    reserved: u16,
+    reserved: u15,
     pub fn init(vector: u8, mask: bool) Lvt {
         return Lvt{
             .vector = vector,
