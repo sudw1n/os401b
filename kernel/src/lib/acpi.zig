@@ -99,22 +99,58 @@ pub const Madt = extern struct {
     /// - Bit 0: 1 if the local APIC is enabled
     flags: u32 align(1),
 
-    pub fn find(self: *Madt, entry_type: MadtEntryType) ?MadtEntry {
-        const table_start = @intFromPtr(self);
-        // entries start after the MADT header
-        const entries_start = table_start + @sizeOf(Madt);
-        const table_end = table_start + self.sdt_header.length;
+    pub fn iterator(self: *Madt) MadtIterator {
+        return MadtIterator.init(self);
+    }
+    pub fn start(self: *Madt) u64 {
+        return @intFromPtr(self) + @sizeOf(Madt);
+    }
+    pub fn end(self: *Madt) u64 {
+        return @intFromPtr(self) + self.sdt_header.length;
+    }
+};
 
-        log.info("Searching MADT for entry type `{s}`", .{@tagName(entry_type)});
-
-        var addr: u64 = entries_start;
-        while (addr < table_end) {
-            const hdr: *MadtEntryHeader = @ptrFromInt(addr);
-            log.debug("Examining entry at address 0x{x:0>16}: `{s}`", .{ addr, @tagName(hdr.entry_type) });
-            // skip the header so that we get the entry
-            const entry_ptr = addr + @sizeOf(MadtEntryHeader);
-            if (entry_type == hdr.entry_type) {
-                log.info("Found entry at address 0x{x:0>16}", .{entry_ptr});
+pub const MadtIterator = struct {
+    madt: *Madt,
+    current: u64,
+    end: u64,
+    pub fn init(madt: *Madt) MadtIterator {
+        return MadtIterator{
+            .madt = madt,
+            .current = madt.start(),
+            .end = madt.end(),
+        };
+    }
+    /// Returns the next entry in the MADT or null if there are no more entries.
+    ///
+    /// Only use this if you are not using findNext() otherwise make sure to reset().
+    pub fn next(self: *MadtIterator) ?MadtEntry {
+        if (self.current >= self.end) {
+            return null;
+        }
+        const hdr: *MadtEntryHeader = @ptrFromInt(self.current);
+        const entry_ptr = self.current + @sizeOf(MadtEntryHeader);
+        self.current += hdr.record_length;
+        return switch (hdr.entry_type) {
+            .ProcessorLocalApic => .{ .ProcessorLocalApic = @ptrFromInt(entry_ptr) },
+            .IoApic => .{ .IoApic = @ptrFromInt(entry_ptr) },
+            .IoApicIntSrcOverride => .{ .IoApicIntSrcOverride = @ptrFromInt(entry_ptr) },
+            .IoApicNmiSrc => .{ .IoApicNmiSrc = @ptrFromInt(entry_ptr) },
+            .LApicNmi => .{ .LApicNmi = @ptrFromInt(entry_ptr) },
+            .LApicAddrOverride => .{ .LApicAddrOverride = @ptrFromInt(entry_ptr) },
+            .LX2Apic => .{ .LX2Apic = @ptrFromInt(entry_ptr) },
+        };
+    }
+    /// Returns the next entry in the MADT of the specified type or null if there are no more
+    /// entries.
+    ///
+    /// Only use this if you are not using next() otherwise make sure to reset().
+    pub fn findNext(self: *MadtIterator, entry_type: MadtEntryType) ?MadtEntry {
+        while (self.current < self.end) {
+            const hdr: *MadtEntryHeader = @ptrFromInt(self.current);
+            const entry_ptr = self.current + @sizeOf(MadtEntryHeader);
+            self.current += hdr.record_length;
+            if (hdr.entry_type == entry_type) {
                 return switch (hdr.entry_type) {
                     .ProcessorLocalApic => .{ .ProcessorLocalApic = @ptrFromInt(entry_ptr) },
                     .IoApic => .{ .IoApic = @ptrFromInt(entry_ptr) },
@@ -125,11 +161,11 @@ pub const Madt = extern struct {
                     .LX2Apic => .{ .LX2Apic = @ptrFromInt(entry_ptr) },
                 };
             }
-            // if not desired entry, skip forward by the record length
-            addr += hdr.record_length;
         }
-        log.err("Entry not found", .{});
         return null;
+    }
+    pub fn reset(self: *MadtIterator) void {
+        self.current = self.madt.start();
     }
 };
 
