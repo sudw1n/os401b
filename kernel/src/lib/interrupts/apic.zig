@@ -111,6 +111,8 @@ fn initLApic() void {
     paging.mapPage(lapic_base, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
 }
 
+const IOAPICVER = 0x01;
+
 fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
     const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
     const xsdt = rsdp.getXSDT();
@@ -126,10 +128,54 @@ fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
                 ioapic_base_phys,
             });
             paging.mapPage(ioapic_base, ioapic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
+
+            const ioapicver = readIoApicRegister(u32, IoRegisters.IoApicVersion);
+            const number_of_inputs = ((ioapicver >> 16) & 0xFF) + 1;
+            log.debug("GSI base: {d}", .{entry.IoApic.gsi_base});
+            log.debug("Number of inputs: {d}", .{number_of_inputs});
             return true;
         }
     }
     return false;
+}
+
+/// Offset for I/O register select to be added to I/O APIC base
+///
+/// Used to select the I/O register to access
+const IOREGSEL: u8 = 0x00;
+/// Offset for I/O register window to be added to I/O APIC base
+///
+/// Used to access data selected by IoRegSel
+const IOWIN: u8 = 0x10;
+
+// I/O APIC registers that can be accessed using the IOREGSEL and IOWIN registers
+const IoRegisters = enum(u8) {
+    /// I/O APIC ID register
+    IoApicId = 0x00,
+    /// I/O APIC version register
+    IoApicVersion = 0x01,
+    /// I/O APIC arbitration ID register
+    IoApicArbitrationId = 0x02,
+    /// I/O APIC redirection table base address
+    IoApicRedirectionTableBase = 0x10,
+};
+
+// if we want to read/write a register of the I/O APIC, we need to:
+// 1. write the register number to the IOREGSEL register
+// 2. read/write the value to the IOWIN register
+
+fn readIoApicRegister(comptime T: type, reg: IoRegisters) T {
+    const regsel: *u8 = @ptrFromInt(ioapic_base + IOREGSEL);
+    const window: *T = @ptrFromInt(ioapic_base + IOWIN);
+    regsel.* = @intFromEnum(reg);
+    return window.*;
+}
+
+fn writeIoApicRegister(comptime T: type, reg: IoRegisters, value: T) void {
+    const regsel: *u8 = @ptrFromInt(ioapic_base + IOREGSEL);
+    const window: *T = @ptrFromInt(ioapic_base + IOWIN);
+    regsel.* = @intFromEnum(reg);
+    window.* = value;
 }
 
 /// The various interrupt vectors handled by APIC
