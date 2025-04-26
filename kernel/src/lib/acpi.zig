@@ -99,6 +99,7 @@ pub const Madt = extern struct {
     /// - Bit 0: 1 if the local APIC is enabled
     flags: u32 align(1),
 
+    /// Iterator for the MADT entries
     pub fn iterator(self: *Madt) MadtIterator {
         return MadtIterator.init(self);
     }
@@ -212,12 +213,23 @@ pub const IoApic = extern struct {
 ///
 /// This entry type contains the data for an Interrupt Source Override, explaining how IRQ
 /// sources are mapped to global system interrupts.
+///
+/// Example:
+/// The PIT Timer is connected to ISA IRQ 0x00, but the APIC is enabled it's connected to APIC
+/// interrupt pin 2. In this case, we need an interrupt source override where the source entry (bus
+/// source) is 0 and the global system interrupt is 2.
 pub const IoApicIntSrcOverride = extern struct {
     /// Bus source
+    ///
+    /// This is usually constant (0) and is a reserved field.
     bus_source: u8 align(1),
     /// IRQ source
+    ///
+    /// This is the source IRQ pin for the override.
     irq_source: u8 align(1),
     /// Global system interrupt
+    ///
+    /// This is the target IRQ on the APIC for the override.
     gsi: u32 align(1),
     /// Flags
     flags: Flags align(1),
