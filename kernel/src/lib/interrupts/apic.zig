@@ -118,7 +118,8 @@ fn initIoApic(rsdp_response: *limine.RsdpResponse) bool {
     const xsdt = rsdp.getXSDT();
     if (xsdt.findSdtHeader("APIC")) |header| {
         const madt: *acpi.Madt = @ptrCast(header);
-        if (madt.find(acpi.MadtEntryType.IoApic)) |entry| {
+        var iterator = madt.iterator();
+        if (iterator.findNext(acpi.MadtEntryType.IoApic)) |entry| {
             const ioapic_base_phys = entry.IoApic.address;
             log.debug("Retrieved I/O APIC base address: {x:0>16}", .{ioapic_base_phys});
             ioapic_base = paging.physToVirtRaw(entry.IoApic.address);
