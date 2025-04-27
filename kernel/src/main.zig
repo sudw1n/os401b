@@ -7,6 +7,7 @@ const term = lib.term;
 const gdt = lib.gdt;
 const idt = lib.idt;
 const apic = lib.apic;
+const timer = lib.timer;
 const registers = lib.registers;
 const paging = lib.paging;
 const acpi = lib.acpi;
@@ -103,8 +104,14 @@ fn init() Error!void {
     if (rsdp_response.address == 0) {
         @panic("RSDP address is null");
     }
+
     try term.logStepBegin("Initializing APICs", .{});
     apic.init(rsdp_response);
+    try term.logStepEnd(true);
+
+    try term.logStepBegin("Initializing the PIT", .{});
+    const reload = timer.getReloadValue(500);
+    timer.setPitPeriodic(reload);
     try term.logStepEnd(true);
 }
 
