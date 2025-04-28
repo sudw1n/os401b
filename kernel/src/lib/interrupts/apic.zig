@@ -72,7 +72,7 @@ pub const ApicOffsets = enum(u32) {
     /// This is 32-bits wide
     Error = 0x370,
 
-    pub fn get(self: ApicOffsets, comptime T: type, base: u64) *T {
+    pub fn get(self: ApicOffsets, comptime T: type, base: u64) *volatile T {
         return @ptrFromInt(base + @intFromEnum(self));
     }
 };
@@ -166,15 +166,15 @@ const IoRegisters = enum(u8) {
 // 2. read/write the value to the IOWIN register
 
 fn readIoApicRegister(comptime T: type, reg: u8) T {
-    const regsel: *u8 = @ptrFromInt(ioapic_base + IOREGSEL);
-    const window: *T = @ptrFromInt(ioapic_base + IOWIN);
+    const regsel: *volatile u8 = @ptrFromInt(ioapic_base + IOREGSEL);
+    const window: *volatile T = @ptrFromInt(ioapic_base + IOWIN);
     regsel.* = reg;
     return window.*;
 }
 
 fn writeIoApicRegister(comptime T: type, reg: u8, value: T) void {
-    const regsel: *u8 = @ptrFromInt(ioapic_base + IOREGSEL);
-    const window: *T = @ptrFromInt(ioapic_base + IOWIN);
+    const regsel: *volatile u8 = @ptrFromInt(ioapic_base + IOREGSEL);
+    const window: *volatile T = @ptrFromInt(ioapic_base + IOWIN);
     regsel.* = reg;
     window.* = value;
 }
@@ -273,7 +273,6 @@ fn setupLApicVectors() void {
     log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ ApicOffsets.LocalId.get(u8, lapic_base).*, LApicInterrupt.Spurious.get() });
     const svt = ApicOffsets.SpuriousInterruptVector.get(u32, lapic_base);
     svt.* |= (1 << 8) | (LApicInterrupt.Spurious); // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
-    log.debug("enabled LAPIC", .{});
 }
 
 pub fn sendEoi() void {
