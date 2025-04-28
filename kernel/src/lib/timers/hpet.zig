@@ -23,6 +23,8 @@ pub const Hpet = struct {
         const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
         const xsdt = rsdp.getXSDT();
         if (xsdt.findSdtHeader("HPET")) |hpet_sdt| {
+            @branchHint(.likely);
+
             const hpet: *HpetSdt = @ptrCast(hpet_sdt);
             const hpet_base_phys = hpet.address;
             const hpet_base = paging.physToVirtRaw(hpet_base_phys);
@@ -47,11 +49,17 @@ pub const Hpet = struct {
                 .counter = counter,
             };
         }
+
         @panic("HPET not found in XSDT");
     }
 
     /// Enable the HPET
     pub fn enableCounter(self: Hpet) void {
+        if (self.general_capabilities.long_mode != 1) {
+            @branchHint(.unlikely);
+            @panic("HPET is not 64-bit");
+        }
+
         // In order for the main counter to actually begin counting, we need to enable it.
         // Furthermore, the default setting is for the HPET to be in legacy mode, but since we want
         // to use the HPET this bit should be cleared.
@@ -59,6 +67,7 @@ pub const Hpet = struct {
         self.general_configuration.enable_cnf = 1;
     }
 
+    /// Return the main counter of the HPET as a number of femtoseconds since it was last reset.
     pub fn poll(self: Hpet) u64 {
         const period = self.general_capabilities.precision;
         return self.counter.* * period;
