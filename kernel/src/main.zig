@@ -7,12 +7,14 @@ const term = lib.term;
 const gdt = lib.gdt;
 const idt = lib.idt;
 const apic = lib.apic;
-const timer = lib.timer;
+const pit = lib.pit;
 const registers = lib.registers;
 const paging = lib.paging;
 const acpi = lib.acpi;
 
 const Error = lib.Error;
+
+const Hpet = lib.hpet.Hpet;
 
 const VERSION = "0.0.1";
 
@@ -69,6 +71,7 @@ pub fn kmain() Error!void {
     // spawn a shell
     log.info("spawning the shell", .{});
     try shell();
+
 }
 
 fn init() Error!void {
@@ -107,11 +110,6 @@ fn init() Error!void {
 
     try term.logStepBegin("Initializing APICs", .{});
     apic.init(rsdp_response);
-    try term.logStepEnd(true);
-
-    try term.logStepBegin("Initializing the PIT", .{});
-    const reload = timer.getReloadValue(500);
-    timer.setPitPeriodic(reload);
     try term.logStepEnd(true);
 }
 
