@@ -6,21 +6,23 @@ const paging = @import("../memory/paging.zig");
 const log = std.log.scoped(.hpet);
 const pagingLog = std.log.scoped(.paging);
 
-pub const HpetSdt = extern struct {
-    header: acpi.AcpiSdtHeader align(1),
-    event_timer_block_id: u32 align(1),
-    /// Note: This is actually some type information describing the address space where the HPET
-    /// registers are located. We can safely ignore that as the HPET spec required the registers to
-    /// be memory mapped.
-    reserved: u32 align(1),
-    /// The physical address of the HPET registers.
-    address: u64 align(1),
-    id: u8 align(1),
-    min_ticks: u16 align(1),
-    page_protection: u8 align(1),
-    pub fn init(xsdt: *acpi.Xsdt) ?*HpetSdt {
-        const result = xsdt.findSdtHeader("HPET");
-        if (result) |hpet_sdt| {
+/// Represents the High Precision Event Timer (HPET)
+pub const Hpet = struct {
+    /// The underlying HPET SDT instance
+    hpet_sdt: *HpetSdt,
+    /// The virtual base address of the HPET registers
+    base: u64,
+    /// General configuration register
+    general_configuration: *volatile GeneralConfiguration,
+    /// General capabilities register
+    general_capabilities: *volatile GeneralCapabilities,
+    /// Counter value
+    counter: *volatile u64,
+
+    pub fn init(rsdp_response: *limine.RsdpResponse) Hpet {
+        const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
+        const xsdt = rsdp.getXSDT();
+        if (xsdt.findSdtHeader("HPET")) |hpet_sdt| {
             const hpet: *HpetSdt = @ptrCast(hpet_sdt);
             const hpet_base_phys = hpet.address;
             const hpet_base = paging.physToVirtRaw(hpet_base_phys);
@@ -33,11 +35,53 @@ pub const HpetSdt = extern struct {
             });
             paging.mapPage(hpet_base, hpet_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
 
-            return hpet;
+            const general_configuration = getRegister(GeneralConfiguration, hpet_base, Registers.GeneralConfiguration);
+            const general_capabilities = getRegister(GeneralCapabilities, hpet_base, Registers.GeneralCapabilities);
+            const counter = getRegister(u64, hpet_base, Registers.MainCounterValue);
+
+            return Hpet{
+                .hpet_sdt = hpet,
+                .base = hpet_base,
+                .general_configuration = general_configuration,
+                .general_capabilities = general_capabilities,
+                .counter = counter,
+            };
         }
-        // in this case, result == null
-        return null;
+        @panic("HPET not found in XSDT");
     }
+
+    /// Enable the HPET
+    pub fn enableCounter(self: Hpet) void {
+        // In order for the main counter to actually begin counting, we need to enable it.
+        // Furthermore, the default setting is for the HPET to be in legacy mode, but since we want
+        // to use the HPET this bit should be cleared.
+        self.general_configuration.legacy_mode = 0;
+        self.general_configuration.enable_cnf = 1;
+    }
+
+    pub fn poll(self: Hpet) u64 {
+        const period = self.general_capabilities.precision;
+        return self.counter.* * period;
+    }
+
+    fn getRegister(comptime T: type, base: u64, register: Registers) *volatile T {
+        const offset = register.get();
+        return @ptrFromInt(base + offset);
+    }
+};
+
+pub const HpetSdt = extern struct {
+    header: acpi.AcpiSdtHeader align(1),
+    event_timer_block_id: u32 align(1),
+    /// Note: This is actually some type information describing the address space where the HPET
+    /// registers are located. We can safely ignore that as the HPET spec required the registers to
+    /// be memory mapped.
+    reserved: u32 align(1),
+    /// The physical address of the HPET registers.
+    address: u64 align(1),
+    id: u8 align(1),
+    min_ticks: u16 align(1),
+    page_protection: u8 align(1),
 };
 
 const Registers = enum(u8) {
@@ -84,22 +128,5 @@ const GeneralConfiguration = packed struct(u64) {
     reserved: u62,
 };
 
-pub fn init(rsdp_response: *limine.RsdpResponse) void {
-    const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
-    const xsdt = rsdp.getXSDT();
-    if (HpetSdt.init(xsdt)) |hpet| {
-        const hpet_base = paging.physToVirtRaw(hpet.address);
-
-        const general_configuration = getRegister(GeneralConfiguration, hpet_base, Registers.GeneralConfiguration);
-        // In order for the main counter to actually begin counting, we need to enable it.
-        // Furthermore, the default setting is for the HPET to be in legacy mode, but since we want
-        // to use the HPET this bit should be cleared.
-        general_configuration.legacy_mode = 0;
-        general_configuration.enable_cnf = 1;
     }
-}
 
-fn getRegister(comptime T: type, base: u64, register: Registers) *volatile T {
-    const offset = register.get();
-    return @ptrFromInt(base + offset);
-}
