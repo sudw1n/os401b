@@ -6,7 +6,8 @@ const serial = lib.serial;
 const term = lib.term;
 const gdt = lib.gdt;
 const idt = lib.idt;
-const apic = lib.apic;
+const lapic = lib.lapic;
+const ioapic = lib.ioapic;
 const pit = lib.pit;
 const registers = lib.registers;
 const paging = lib.paging;
@@ -109,7 +110,8 @@ fn init() Error!void {
     }
 
     try term.logStepBegin("Initializing APICs", .{});
-    apic.init(rsdp_response);
+    lapic.init();
+    ioapic.init(rsdp_response);
     try term.logStepEnd(true);
 }
 

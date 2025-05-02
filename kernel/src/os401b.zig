@@ -9,11 +9,14 @@ pub const term = @import("lib/tty/terminal.zig");
 pub const cpu = @import("lib/cpu.zig");
 pub const gdt = @import("lib/gdt.zig");
 pub const idt = @import("lib/interrupts/idt.zig");
-pub const apic = @import("lib/interrupts/apic.zig");
-pub const timer = @import("lib/interrupts/timer.zig");
+pub const lapic = @import("lib/interrupts/lapic.zig");
+pub const ioapic = @import("lib/interrupts/ioapic.zig");
 pub const registers = @import("lib/registers.zig");
 pub const paging = @import("lib/memory/paging.zig");
 pub const acpi = @import("lib/acpi.zig");
+
+pub const pit = @import("lib/timers/pit.zig");
+pub const hpet = @import("lib/timers/hpet.zig");
 
 pub const SerialWriter = serial.SerialWriter;
 
