@@ -5,7 +5,7 @@ const paging = @import("../memory/paging.zig");
 const term = @import("../tty/terminal.zig");
 const limine = @import("limine");
 
-const log = std.log.scoped(.apic);
+const log = std.log.scoped(.lapic);
 const pagingLog = std.log.scoped(.paging);
 
 const Leaf = cpu.Leaf;
@@ -39,10 +39,11 @@ pub const LApic = struct {
         };
     }
 
-    pub fn sendIpi(self: *LApic, dest_id: u32, vector: u8) void {
-        log.debug("sending IPI to LAPIC {d} with vector {x:0>2}", .{ dest_id, vector });
-        const high = Registers.ICR_HIGH.get(u32, self.regs);
-        const low = Registers.ICR_LOW.get(u32, self.regs);
+    /// Send an Inter-Processor Interrupt to the LAPIC
+    pub fn sendIpi(self: *LApic, vector: u8) void {
+        log.debug("sending IPI to LAPIC {d} with vector {x:0>2}", .{ self.id(), vector });
+        const high = self.get(u32, Registers.ICR_HIGH);
+        const low = self.get(u32, Registers.ICR_LOW);
 
         // the IPI is sent when the lower half is written to, so we should setup the destination in the
         // higher half first before writing the vector in the lower half.
@@ -51,7 +52,7 @@ pub const LApic = struct {
         // destination id.
         high.* = 0;
 
-        low.* = @as(u32, vector) | IcrShorthand.AllExcludingSelf.get();
+        low.* = @as(u32, vector) | IcrShorthand.Self.get();
         // poll Delivery Status (bit 12) until it clears
         while ((low.* & (1 << 12)) != 0) {
             // wait
@@ -59,28 +60,28 @@ pub const LApic = struct {
     }
 
     /// Read an APIC register
-    pub fn read(self: *LApic, comptime T: type, reg: Registers) T {
-        return reg.get(T, @intFromPtr(self.regs));
-    }
-
-    /// Write to an APIC register
-    pub fn write(self: *LApic, comptime T: type, reg: Registers, value: T) void {
-        const ptr = reg.get(T, @intFromPtr(self.regs));
-        ptr.* = value;
+    pub fn get(self: *LApic, comptime T: type, reg: Registers) *volatile T {
+        return @ptrFromInt(@intFromPtr(self.regs) + reg.get());
     }
 
     /// Send EOI to LAPIC
     pub fn sendEoi(self: *LApic) void {
         log.debug("sending EOI to LAPIC", .{});
-        const eoi = Registers.Eoi.get(u32, @intFromPtr(self.regs));
+        const eoi = self.get(u32, Registers.Eoi);
         eoi.* = 0; // send EOI
     }
 
+    /// Enable the spurious interrupt vector
     pub fn enableSpurious(self: *LApic) void {
-        log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ self.read(u8, Registers.LocalId), InterruptVectors.Spurious.get() });
-        const svt = self.read(u32, Registers.SpuriousInterruptVector);
+        log.debug("enabling LAPIC {d} and setting spurious vector entry as {x:0>2}", .{ self.id(), InterruptVectors.Spurious.get() });
+        const svt = self.get(u32, Registers.SpuriousInterruptVector);
         // set the APIC enabled bit (bit 8) and the spurious interrupt vector (bits 0-7)
-        svt.* |= (1 << 8) | (InterruptVectors.Spurious);
+        svt.* |= (@as(u32, (1 << 8)) | (InterruptVectors.Spurious.get()));
+    }
+
+    /// Returns the ID of the Local APIC
+    pub fn id(self: *LApic) u8 {
+        return self.get(u8, Registers.LocalId).*;
     }
 };
 
@@ -113,6 +114,7 @@ pub const Registers = enum(u32) {
 
     ICR_LOW = 0x300,
     ICR_HIGH = 0x310,
+
     /// Used for controlling the LAPIC timer
     ///
     /// This is 64-bits wide split across two 32-bit registers
@@ -129,19 +131,19 @@ pub const Registers = enum(u32) {
     /// (emulates IRQ0 from PIC)
     ///
     /// This is 32-bits wide
-    LInt0 = 0x350,
+    Int0 = 0x350,
     /// Specifies the interrupt delivery when an interrupt is signaled on LINT1 pin
     /// (usually NMI)
     ///
     /// This is 32-bits wide
-    LInt1 = 0x360,
+    Int1 = 0x360,
     /// Configures how the local APIC should report an internal error.
     ///
     /// This is 32-bits wide
     Error = 0x370,
 
-    pub fn get(self: Registers, comptime T: type, base: u64) *volatile T {
-        return @ptrFromInt(base + @intFromEnum(self));
+    pub fn get(self: Registers) u32 {
+        return @intFromEnum(self);
     }
 };
 
@@ -159,8 +161,6 @@ pub fn init() void {
     log.info("Initializing LAPIC", .{});
     global_lapic = LApic.init();
     global_lapic.enableSpurious();
-
-    log.info("Initializing I/O APIC", .{});
 }
 
 /// The various interrupt vectors handled by APIC
