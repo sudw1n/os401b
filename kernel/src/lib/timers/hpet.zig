@@ -1,6 +1,8 @@
 const std = @import("std");
 const limine = @import("limine");
 const acpi = @import("../acpi.zig");
+const ioapic = @import("../interrupts/ioapic.zig");
+const lapic = @import("../interrupts/lapic.zig");
 const paging = @import("../memory/paging.zig");
 
 const log = std.log.scoped(.hpet);
@@ -73,6 +75,53 @@ pub const Hpet = struct {
         return self.counter.* * period;
     }
 
+    pub fn armComparator(self: Hpet, comparator: u8, period: u64) void {
+        const config_reg = ComparatorRegisters.Config.get(self.base, comparator);
+
+        // Determine allowed I/O APIC routing:
+        //
+        // Every comparator in the HPET has a 32-bit route mask in the top half of its 64-bit config
+        // register. 1s in that mask tell us which GSI the HPET can drive.
+        // By doing the following, we're scanning from GSI 0 up until we hit the first bit the HPET
+        // supports. That index is the pin we will wire our comparator to.
+        const allowed_routes = @as(u32, config_reg.* >> 32);
+        var used_route: u64 = 0;
+        while ((allowed_routes & 1) == 0) {
+            used_route += 1;
+            allowed_routes >>= 1;
+        }
+        log.debug("Using GSI {d} for comparator {d}", .{ used_route, comparator });
+
+        // Tell the comparator which pin to use and enable its interrupt:
+        //
+        // Bit 2 is the interrupt enable bit
+        // Bits 3-4 control periodic vs one-shot mode
+        // Bits 9-12 hold the GSI number we want
+        config_reg.* &= ~@as(u64, (0xF << 9)); // clear any old GSI number
+        config_reg.* |= used_route << 9; // program the new GSI
+        config_reg.* |= @as(u64, 1 << 2); // flip on the interrupt
+
+        // Nothing will actually ring at the CPU until we program the I/O APIC
+        // After the HPET asserts `used_route`, the I/O APIC must forward that GSI into our LAPIC
+        // (and then into the IDT).
+        const pin = used_route + ioapic.global_ioapic.gsi_base;
+        const vector = ioapic.InterruptVectors.HpetTimer.get();
+        const lvt = ioapic.Lvt.init(vector, false);
+        ioapic.global_ioapic.program(pin, lvt, lapic.global_lapic.id());
+
+        // Scheduling the next tick:
+        //
+        // Read the main counter
+        // Add the desired interval (in femtoseconds)
+        // Write that value to the comparator's value register
+        //
+        // Once the main counter reaches that value, the comparator's config latch will fire the IRQ
+        const counter = self.counter;
+        const target: u64 = counter.* + (period / self.general_capabilities.precision);
+        const compare_reg = ComparatorRegisters.Value.get(self.base, comparator);
+        compare_reg.* = target;
+    }
+
     fn getRegister(comptime T: type, base: u64, register: Registers) *volatile T {
         const offset = register.get();
         return @ptrFromInt(base + offset);
@@ -137,5 +186,33 @@ const GeneralConfiguration = packed struct(u64) {
     reserved: u62,
 };
 
-    }
+const ComparatorRegisters = enum(u16) {
+    Config = 0x100,
+    Value = 0x108,
 
+    /// Get comparator registers for the comparator `n` using the given HPET base.
+    pub fn get(self: ComparatorRegisters, hpet_base: u64, n: u8) *volatile u64 {
+        const offset = @intFromEnum(self);
+        return @ptrFromInt(hpet_base + offset + (n * 0x20));
+    }
+};
+
+/// Layout of the comparator config and value registers
+const Comparator = packed struct(u64) {
+    reserved1: u2 = 0,
+    /// Even if this is cleared the comparator will still operate, and set the interrupt pending
+    /// bit, but no interrupt will be sent to the IO APIC. This bit acts in reverse to how a mask
+    /// bit would: if this bit is set, interrupts are generated.
+    enable: u1,
+    /// First bit is used to select periodic mode if supported.
+    /// Second bit is set if the comparator supports periodic mode.
+    /// If either bit is cleared, the comparator is in one-shot mode.
+    periodic: u2,
+    reserved2: u4 = 0,
+    /// Write the integer value of the interrupt that should be triggered by this comparator. It’s
+    /// recommended to read this register back after writing to verify the comparator accepted the
+    /// interrupt number that has been set.
+    interrupt_number: u5,
+    reserved3: u18 = 0,
+    triggerable: u32,
+};
