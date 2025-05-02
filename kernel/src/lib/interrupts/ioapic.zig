@@ -2,6 +2,7 @@ const std = @import("std");
 const limine = @import("limine");
 const acpi = @import("../acpi.zig");
 const paging = @import("../memory/paging.zig");
+const lapic = @import("lapic.zig");
 
 const log = std.log.scoped(.ioapic);
 const pagingLog = std.log.scoped(.paging);
@@ -130,7 +131,7 @@ pub const IoApic = struct {
 
     /// How many redirection entries this I/O APIC supports
     pub fn redirCount(self: *IoApic) u32 {
-        const version = self.read(u32, Registers.Version);
+        const version = self.read(u32, Registers.Version.get());
         return ((version >> 16) & 0xFF) + 1;
     }
 };
@@ -146,8 +147,8 @@ pub const Registers = enum(u8) {
     /// I/O APIC redirection table base address
     RedirectionTableBase = 0x10,
 
-    pub fn get(self: Registers, base: [*]volatile u32) *volatile u32 {
-        return &base[@intFromEnum(self)];
+    pub fn get(self: Registers) u8 {
+        return @intFromEnum(self);
     }
 };
 
