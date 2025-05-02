@@ -209,9 +209,17 @@ pub const Lvt = packed struct(u32) {
 
 /// Interrupt vectors handled by the I/O APIC
 pub const InterruptVectors = enum(u8) {
+    PitTimer = 0x20,
     HpetTimer = 0x30,
     pub fn get(self: InterruptVectors) u8 {
         return @intFromEnum(self);
+    }
+    /// Is the vector handled by the I/O APIC
+    pub fn is(vector: u8) bool {
+        return switch (vector) {
+            0x20...0x30 => true,
+            else => false,
+        };
     }
 };
 
@@ -229,4 +237,12 @@ pub fn init(rsdp_response: *limine.RsdpResponse) void {
     // find the I/O APIC entry
     const entry = it.findNext(acpi.MadtEntryType.IoApic) orelse @panic("I/O APIC not found in MADT");
     global_ioapic = IoApic.init(entry);
+}
+
+/// Program the I/O APIC to route the PIT timer interrupts to the LAPIC
+pub fn routePit() void {
+    // since we're using UEFI the PIT should appear as IRQ 2
+    const pin = 2;
+    const lvt = Lvt.init(InterruptVectors.PitTimer.get(), false);
+    global_ioapic.program(pin, lvt, lapic.global_lapic.id());
 }
