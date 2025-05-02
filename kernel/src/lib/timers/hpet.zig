@@ -75,6 +75,9 @@ pub const Hpet = struct {
         return self.counter.* * period;
     }
 
+    /// Program a HPET comparator to fire an interrupt at a fixed, periodic interval.
+    ///
+    /// period: Desired interval between interrupts
     pub fn armComparator(self: Hpet, comparator: u8, period: u64) void {
         const config_reg = ComparatorRegisters.Config.get(self.base, comparator);
 
