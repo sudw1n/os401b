@@ -87,8 +87,8 @@ pub const Hpet = struct {
         // register. 1s in that mask tell us which GSI the HPET can drive.
         // By doing the following, we're scanning from GSI 0 up until we hit the first bit the HPET
         // supports. That index is the pin we will wire our comparator to.
-        const allowed_routes = @as(u32, config_reg.* >> 32);
-        var used_route: u64 = 0;
+        var allowed_routes: u32 = @truncate(config_reg.* >> 32);
+        var used_route: u32 = 0;
         while ((allowed_routes & 1) == 0) {
             used_route += 1;
             allowed_routes >>= 1;
@@ -102,12 +102,12 @@ pub const Hpet = struct {
         // Bits 9-12 hold the GSI number we want
         config_reg.* &= ~@as(u64, (0xF << 9)); // clear any old GSI number
         config_reg.* |= used_route << 9; // program the new GSI
-        config_reg.* |= @as(u64, 1 << 2); // flip on the interrupt
+        config_reg.* |= @as(u64, 0b11 << 2); // flip on the interrupt and turn on periodic
 
         // Nothing will actually ring at the CPU until we program the I/O APIC
         // After the HPET asserts `used_route`, the I/O APIC must forward that GSI into our LAPIC
         // (and then into the IDT).
-        const pin = used_route + ioapic.global_ioapic.gsi_base;
+        const pin: u32 = used_route + ioapic.global_ioapic.gsi_base;
         const vector = ioapic.InterruptVectors.HpetTimer.get();
         const lvt = ioapic.Lvt.init(vector, false);
         ioapic.global_ioapic.program(pin, lvt, lapic.global_lapic.id());
