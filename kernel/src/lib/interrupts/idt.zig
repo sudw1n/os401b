@@ -10,13 +10,15 @@ const std = @import("std");
 const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
 const lapic = @import("lapic.zig");
+const ioapic = @import("ioapic.zig");
 const registers = @import("../registers.zig");
 const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
 
 const log = std.log.scoped(.idt);
 
-const ApicInterrupts = lapic.InterruptVectors;
+const LApicInterrupts = lapic.InterruptVectors;
+const IoApicInterrupts = ioapic.InterruptVectors;
 
 const SegmentSelector = gdtlib.SegmentSelector;
 const Dpl = gdtlib.Dpl;
@@ -211,32 +213,32 @@ export fn interruptCommon() callconv(.Naked) void {
 }
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
-    if (frame.vector_number == ApicInterrupts.Spurious.get()) {
-        log.info("Received spurious interrupt, ignoring...", .{});
-        // this is a spurious interrupt, so we can ignore it
+    const vector: u8 = @intCast(frame.vector_number);
+    // We need to send EOI for APIC interrupts
+    if (LApicInterrupts.is(vector) or IoApicInterrupts.is(vector)) {
+        // but the spurious vectors should be ignored
+        if (vector == LApicInterrupts.Spurious.get()) {
+            log.debug("Received spurious interrupt, ignoring...", .{});
+            return;
+        }
+        log.debug("Received APIC interrupt, sending EOI...", .{});
+        lapic.global_lapic.sendEoi();
         return;
     }
 
-    log.info("Received interrupt 0x{x}", .{frame.vector_number});
+    log.info("Received interrupt 0x{x}", .{vector});
 
-    const panicMsg = switch (Exception.is(frame.vector_number)) {
+    const panicMsg = switch (Exception.is(vector)) {
         true => blk: {
-            const exception: Exception = @enumFromInt(frame.vector_number);
+            const exception: Exception = @enumFromInt(vector);
             log.err("Exception: #{s}", .{@tagName(exception)});
             break :blk "Reached unrecoverable exception";
         },
         false => "unhandled interrupt",
     };
 
-    switch (frame.vector_number) {
-        // we don't think about spurious interrupt because that has been handled above
-        0xF0...0xFF => {
-            // since this is an APIC interrupt, we need to send EOI
-            lapic.global_lapic.sendEoi();
-        },
-        else => {},
-    }
-
+    // this is a special case I implemented where a scope of none and debug level removes all of the
+    // prefix strings from the log line, this way our interrupt frame looks clean
     const cleanLog = std.log.scoped(.none);
     cleanLog.debug("{}", .{frame});
     @panic(panicMsg);
