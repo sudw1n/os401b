@@ -9,14 +9,14 @@
 const std = @import("std");
 const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
-const apic = @import("apic.zig");
+const lapic = @import("lapic.zig");
 const registers = @import("../registers.zig");
 const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
 
 const log = std.log.scoped(.idt);
 
-const ApicInterrupt = apic.LApicInterrupt;
+const ApicInterrupts = lapic.InterruptVectors;
 
 const SegmentSelector = gdtlib.SegmentSelector;
 const Dpl = gdtlib.Dpl;
@@ -211,7 +211,7 @@ export fn interruptCommon() callconv(.Naked) void {
 }
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
-    if (frame.vector_number == ApicInterrupt.Spurious.get()) {
+    if (frame.vector_number == ApicInterrupts.Spurious.get()) {
         log.info("Received spurious interrupt, ignoring...", .{});
         // this is a spurious interrupt, so we can ignore it
         return;
@@ -232,7 +232,7 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
         // we don't think about spurious interrupt because that has been handled above
         0xF0...0xFF => {
             // since this is an APIC interrupt, we need to send EOI
-            apic.sendEoi();
+            lapic.global_lapic.sendEoi();
         },
         else => {},
     }
