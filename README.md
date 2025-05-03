@@ -5,6 +5,8 @@ This is a hobby OS made to learn about OS development as well as experiment with
 The goal is to make a simple kernel targetting the x86_64 architecture with a focus on memory
 safety.
 
+![screenshot](screenshot.png)
+
 ## How to Run
 You'll need the following packages installed (package names are according to
 [nixpkgs](https://search.nixos.org/packages?channel=unstable)):
