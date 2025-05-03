@@ -66,7 +66,7 @@ pub const LApic = struct {
 
     /// Send EOI to LAPIC
     pub fn sendEoi(self: *LApic) void {
-        log.debug("sending EOI to LAPIC", .{});
+        log.debug("sending EOI to LAPIC {d}", .{self.id()});
         const eoi = self.get(u32, Registers.Eoi);
         eoi.* = 0; // send EOI
     }
