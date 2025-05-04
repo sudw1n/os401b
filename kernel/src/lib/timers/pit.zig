@@ -5,13 +5,13 @@ const cpu = @import("../cpu.zig");
 const out = cpu.out;
 const in = cpu.in;
 
-const default_frequency: u32 = 1193182; // 1.193182 MHz
+pub const frequency: u32 = 1193182; // 1.193182 MHz
 
 /// Return the initial count needed to generate interrupts at the given rate.
 ///
 /// hz: Desired interrupt frequency, in hertz (i.e. how many interrupts per second).
 pub fn reloadForHz(hz: u32) u16 {
-    const reload_value = std.math.divCeil(u16, default_frequency, hz) catch @panic("reloadForHz: invalid frequency");
+    const reload_value = std.math.divCeil(u16, frequency, hz) catch @panic("reloadForHz: invalid frequency");
     return reload_value;
 }
 
@@ -20,11 +20,13 @@ pub fn reloadForHz(hz: u32) u16 {
 /// ms: Desired duration in milliseconds
 pub fn reloadForMs(ms: u32) u16 {
     // The frequency tells us how many ticks are in 1 second.
-    // Desired delay in seconds: T = ms / 1000
+    // Now, desired delay in seconds: T = ms / 1000
+    // So to get total ticks, we multiply how many seconds there are (T) by how many ticks there are
+    // in a second (frequency).
     // Ticks needed = frequency * T = frequency * ms / 1000
 
     // widen to 64-bit
-    const numerator: u64 = @as(u64, default_frequency) * @as(u64, ms);
+    const numerator: u64 = @as(u64, frequency) * @as(u64, ms);
     // divide with rounding up
     const raw: u64 = std.math.divCeil(u64, numerator, 1_000) catch @panic("reloadForMs: bad divisor");
     // guard 16-bit limit
@@ -33,6 +35,13 @@ pub fn reloadForMs(ms: u32) u16 {
     }
     // safe to truncate
     return @truncate(raw);
+}
+
+/// How many milliseconds correspond to the given number of ticks?
+pub fn ticksToMs(ticks: u32) u32 {
+    // See the comment inside reloadForMs() to understand how this formula has been derived.
+    // This is basically just the inverse of the formula used there.
+    return std.math.divCeil(u32, (ticks * 1000), frequency) catch @panic("ticksToMs: division error");
 }
 
 /// Configure the PIT in periodic mode with the given count
@@ -108,7 +117,7 @@ pub fn readCurrentCount() u16 {
 
 pub fn sleep(ms: u32) void {
     // get the maximum ms we can wait for in a single cycle
-    const max_ms: u32 = (@as(u32, 0xFFFF) * 1_000) / default_frequency;
+    const max_ms: u32 = (@as(u32, 0xFFFF) * 1_000) / frequency;
     var remaining_duration: u32 = ms;
 
     // loop until we've covered the full duration
