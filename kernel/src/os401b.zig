@@ -17,6 +17,7 @@ pub const acpi = @import("lib/acpi.zig");
 
 pub const pit = @import("lib/timers/pit.zig");
 pub const hpet = @import("lib/timers/hpet.zig");
+pub const lapic_timer = @import("lib/timers/lapic_timer.zig");
 
 pub const SerialWriter = serial.SerialWriter;
 
