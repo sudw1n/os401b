@@ -59,7 +59,7 @@ pub const LApic = struct {
         }
     }
 
-    /// Read an APIC register
+    /// Get a pointer to an APIC register
     pub fn get(self: *LApic, comptime T: type, reg: Registers) *volatile T {
         return @ptrFromInt(@intFromPtr(self.regs) + reg.get());
     }
@@ -141,6 +141,13 @@ pub const Registers = enum(u32) {
     ///
     /// This is 32-bits wide
     Error = 0x370,
+
+    /// Load this to start the timer
+    InitialCount = 0x380,
+    /// Read how many ticks remain
+    CurrentCount = 0x390,
+    /// Divide incoming clock ticks
+    Divisor = 0x3E0,
 
     pub fn get(self: Registers) u32 {
         return @intFromEnum(self);
