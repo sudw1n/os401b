@@ -65,7 +65,7 @@ pub fn in(comptime T: type, port: u16) T {
     };
 }
 
-pub fn out(port: u16, data: anytype) void {
+pub inline fn out(port: u16, data: anytype) void {
     const T: type = @TypeOf(data);
     return switch (T) {
         u8 => asm volatile ("outb %[data], %[port]"
@@ -73,12 +73,12 @@ pub fn out(port: u16, data: anytype) void {
             : [port] "N{dx}" (port),
               [data] "{al}" (data),
         ),
-        u16 => asm volatile ("outb %[data], %[port]"
+        u16 => asm volatile ("outw %[data], %[port]"
             : // no outputs
             : [port] "N{dx}" (port),
               [data] "{ax}" (data),
         ),
-        u32 => asm volatile ("outb %[data], %[port]"
+        u32 => asm volatile ("outl %[data], %[port]"
             : // no outputs
             : [port] "N{dx}" (port),
               [data] "{eax}" (data),
