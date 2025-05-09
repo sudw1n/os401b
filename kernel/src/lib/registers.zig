@@ -1,4 +1,5 @@
 const std = @import("std");
+const cpu = @import("cpu.zig");
 
 /// CR2 Register
 pub const Cr2 = struct {
@@ -146,4 +147,33 @@ pub const Msr = enum(u32) {
     ///  Bits 12:31: Contains the base address of the local APIC for this processor core.
     ///  Bits 32:63: reserved.
     IA32_APIC_BASE = 0x1B,
+    /// TSC Deadline
+    IA32_TSC_DEADLINE = 0x6E0,
+
+    /// Read a 64‑bit MSR
+    pub inline fn read(self: Msr) u64 {
+        var low: u32 = undefined;
+        var high: u32 = undefined;
+        asm volatile (
+            \\ rdmsr
+            : [low] "={eax}" (low), // EAX ← low 32 bits
+              [high] "={edx}" (high), // EDX ← high 32 bits
+            : [msr] "{ecx}" (self), // ECX ← MSR index
+            : "memory" // prevent reordering around MSR access
+        );
+        return (@as(u64, high) << 32) | low;
+    }
+
+    /// Write a 64‑bit MSR
+    pub inline fn write(self: Msr, value: u64) void {
+        var low: u32 = @truncate(value);
+        var high: u32 = @truncate(value >> 32);
+        asm volatile (
+            \\ wrmsr
+            : [low] "={eax}" (low), // EAX ← low 32 bits
+              [high] "={edx}" (high), // EDX ← high 32 bits
+            : [msr] "{ecx}" (self), // ECX ← MSR index
+            : "memory" // prevent reordering around MSR access
+        );
+    }
 };
