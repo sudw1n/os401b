@@ -26,7 +26,7 @@ pub fn reloadForMs(ms: u32) u16 {
     // Ticks needed = frequency * T = frequency * ms / 1000
 
     // widen to 64-bit
-    const numerator: u64 = @as(u64, frequency) * @as(u64, ms);
+    const numerator: u64 = std.math.mulWide(u32, frequency, ms);
     // divide with rounding up
     const raw: u64 = std.math.divCeil(u64, numerator, 1_000) catch @panic("reloadForMs: bad divisor");
     // guard 16-bit limit
@@ -48,15 +48,18 @@ pub fn ticksToMs(ticks: u32) u32 {
 pub fn setPeriodic(count: u16) void {
     const config_byte: ConfigByte = .init(Mode.Periodic);
     out(
+        u8,
         Port.ModeCommand.get(),
         @as(u8, @bitCast(config_byte)),
     );
     out(
+        u8,
         Port.Channel0.get(),
         // low-byte
         @as(u8, @truncate(count)),
     );
     out(
+        u8,
         Port.Channel0.get(),
         // high-byte
         @as(u8, @truncate(count >> 8)),
@@ -67,15 +70,18 @@ pub fn setPeriodic(count: u16) void {
 pub fn setOneShot(count: u16) void {
     const config_byte: ConfigByte = .init(Mode.OneShot);
     out(
+        u8,
         Port.ModeCommand.get(),
         @as(u8, @bitCast(config_byte)),
     );
     out(
+        u8,
         Port.Channel0.get(),
         // low-byte
         @as(u8, @truncate(count)),
     );
     out(
+        u8,
         Port.Channel0.get(),
         // high-byte
         @as(u8, @truncate(count >> 8)),
@@ -105,9 +111,9 @@ pub fn readCurrentCount() u16 {
     //
     // If bit 4 is clear, then for any/all PIT channels selected with bits 1 to 3, the next read of the
     // corresponding data port will return a status byte.
-    const READBACK_CH0: u8 = 0b1101_0010;
+    const READBACK_CH0 = 0b1101_0010;
     // latch the count
-    out(Port.ModeCommand.get(), READBACK_CH0);
+    out(u8, Port.ModeCommand.get(), READBACK_CH0);
 
     // read low then high
     const lo = in(u8, Port.Channel0.get());

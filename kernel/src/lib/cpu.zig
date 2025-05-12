@@ -65,29 +65,28 @@ pub fn in(comptime T: type, port: u16) T {
     };
 }
 
-pub inline fn out(port: u16, data: anytype) void {
-    const T: type = @TypeOf(data);
-    return switch (T) {
+pub inline fn out(comptime T: type, port: u16, data: T) void {
+    switch (T) {
         u8 => asm volatile ("outb %[data], %[port]"
             : // no outputs
-            : [port] "N{dx}" (port),
-              [data] "{al}" (data),
+            : [data] "{al}" (data),
+              [port] "{dx}" (port),
         ),
         u16 => asm volatile ("outw %[data], %[port]"
             : // no outputs
-            : [port] "N{dx}" (port),
-              [data] "{ax}" (data),
+            : [data] "{ax}" (data),
+              [port] "{dx}" (port),
         ),
         u32 => asm volatile ("outl %[data], %[port]"
             : // no outputs
-            : [port] "N{dx}" (port),
-              [data] "{eax}" (data),
+            : [data] "{eax}" (data),
+              [port] "{dx}" (port),
         ),
         else => @compileError("The `out` instruction only supports u8, u16 or u32 but found: " ++ @typeName(T)),
-    };
+    }
 }
 
-pub fn rdtsc() u64 {
+pub inline fn rdtsc() u64 {
     var high: u32 = 0;
     var low: u32 = 0;
     asm volatile ("rdtsc"
@@ -105,7 +104,7 @@ pub const Leaf = struct {
 };
 
 /// Calls CPUID with the given value of EAX and ECX.
-pub fn cpuid(leaf_id: u32, subid: u32) Leaf {
+pub inline fn cpuid(leaf_id: u32, subid: u32) Leaf {
     var eax: u32 = undefined;
     var ebx: u32 = undefined;
     var ecx: u32 = undefined;

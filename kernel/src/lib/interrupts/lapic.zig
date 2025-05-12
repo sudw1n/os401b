@@ -21,7 +21,7 @@ pub const LApic = struct {
     regs: [*]volatile u32,
 
     pub fn init() LApic {
-        const apic_msr = cpu.rdmsr(Msr.IA32_APIC_BASE);
+        const apic_msr = Msr.IA32_APIC_BASE.read();
         // extract the base address from the MSR (bits 12-31)
         const apic_base_phys = apic_msr & 0xfffff000;
         log.debug("Retrieved LAPIC base address: {x:0>16}", .{apic_base_phys});
@@ -219,38 +219,44 @@ fn disablePic() void {
     // ICW (Initialization Command Words) for the PICs
 
     // indicates start of initialization sequence, same for master and slave
-    const ICW_1: u8 = 0x11;
+    const ICW_1 = 0x11;
     // interrupt vector address values (IDT entries) for master and slave
     // this is since the first 31 interrupts are exceptions/reserved,
     // both PICs occupy 8 IRQs each
-    const ICW_2_M: u8 = 0x20;
-    const ICW_2_S: u8 = 0x28;
+    const ICW_2_M = 0x20;
+    const ICW_2_S = 0x28;
     // used to indicate if the pin has a slave or not.
     // since the slave pic will be connected to one of the interrupt pins of the master, we need to
     // indicate which one it is. On x86, the slave is connected to second IRQ pin of the master.
     // for the slave, the value will be its id.
-    const ICW_3_M: u8 = 0x2;
-    const ICW_3_S: u8 = 0x4;
+    const ICW_3_M = 0x2;
+    const ICW_3_S = 0x4;
     // contains some configuration bits for the mode of operation, in this case we just tell we are
     // going to use the 8086 mode.
-    const ICW_4: u8 = 0;
+    const ICW_4 = 0;
 
     // mask all interrupts
-    const MASK_INTERRUPTS: u8 = 0xff;
+    const MASK_INTERRUPTS = 0xff;
     const out = cpu.out;
 
-    out(PIC_COMMAND_MASTER, ICW_1);
-    out(PIC_COMMAND_SLAVE, ICW_1);
+    // things like the PIT can start firing interrupts after we start the initialization sequence
+    // (before we fully disable the PIC), so temporarily disable them.
+    cpu.cli();
 
-    out(PIC_DATA_MASTER, ICW_2_M);
-    out(PIC_DATA_SLAVE, ICW_2_S);
+    out(u8, PIC_COMMAND_MASTER, ICW_1);
+    out(u8, PIC_COMMAND_SLAVE, ICW_1);
 
-    out(PIC_DATA_MASTER, ICW_3_M);
-    out(PIC_DATA_SLAVE, ICW_3_S);
+    out(u8, PIC_DATA_MASTER, ICW_2_M);
+    out(u8, PIC_DATA_SLAVE, ICW_2_S);
 
-    out(PIC_DATA_MASTER, ICW_4);
-    out(PIC_DATA_SLAVE, ICW_4);
+    out(u8, PIC_DATA_MASTER, ICW_3_M);
+    out(u8, PIC_DATA_SLAVE, ICW_3_S);
 
-    out(PIC_DATA_MASTER, MASK_INTERRUPTS);
-    out(PIC_DATA_SLAVE, MASK_INTERRUPTS);
+    out(u8, PIC_DATA_MASTER, ICW_4);
+    out(u8, PIC_DATA_SLAVE, ICW_4);
+
+    out(u8, PIC_DATA_MASTER, MASK_INTERRUPTS);
+    out(u8, PIC_DATA_SLAVE, MASK_INTERRUPTS);
+
+    cpu.sti();
 }

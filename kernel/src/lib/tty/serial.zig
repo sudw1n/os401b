@@ -34,25 +34,25 @@ pub const SerialWriter = struct {
 
     pub fn init() SerialError!Self {
         // disable all interrupts
-        cpu.out(PORT + 1, @as(u8, 0x00));
+        cpu.out(u8, PORT + 1, 0x00);
         // enable DLAB (set baud rate divisor)
-        cpu.out(PORT + 3, @as(u8, 0x80));
+        cpu.out(u8, PORT + 3, 0x80);
         // set divisor to 38400 baud
-        cpu.out(PORT + 0, @as(u8, 0x03)); // 3 (lo byte)
-        cpu.out(PORT + 1, @as(u8, 0x00)); // 0 (hi byte)
-        cpu.out(PORT + 3, @as(u8, 0x03)); // 8 bits, no parity, one stop bit
-        cpu.out(PORT + 2, @as(u8, 0xC7)); // Enable FIFO, clear them, with 14-byte threshold
-        cpu.out(PORT + 4, @as(u8, 0x0B)); // IRQs enabled, RTS/DSR set
-        cpu.out(PORT + 4, @as(u8, 0x1E)); // Set in loopback mode, test the serial chip
+        cpu.out(u8, PORT + 0, 0x03); // 3 (lo byte)
+        cpu.out(u8, PORT + 1, 0x00); // 0 (hi byte)
+        cpu.out(u8, PORT + 3, 0x03); // 8 bits, no parity, one stop bit
+        cpu.out(u8, PORT + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
+        cpu.out(u8, PORT + 4, 0x0B); // IRQs enabled, RTS/DSR set
+        cpu.out(u8, PORT + 4, 0x1E); // Set in loopback mode, test the serial chip
 
-        cpu.out(PORT + 0, @as(u8, 0xAE)); // Send a test byte
+        cpu.out(u8, PORT + 0, 0xAE); // Send a test byte
         if (cpu.in(u8, PORT + 0) != 0xAE) {
             @panic("Invalid serial device");
         }
 
         // If serial is not faulty set it in normal operation mode:
         // not-loopback with IRQs enabled and OUT#1 and OUT#2 bits enabled
-        cpu.out(PORT + 4, @as(u8, 0x0F));
+        cpu.out(u8, PORT + 4, 0x0F);
 
         return Self{};
     }
@@ -87,7 +87,7 @@ pub const SerialWriter = struct {
     fn writeStr(s: []const u8) void {
         for (s) |c| {
             while (isTransmitEmpty()) {}
-            cpu.out(PORT, c);
+            cpu.out(u8, PORT, c);
         }
     }
 };
