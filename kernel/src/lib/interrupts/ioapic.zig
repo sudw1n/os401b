@@ -184,7 +184,9 @@ pub const Lvt = packed struct(u32) {
     trigger_mode: u1,
     /// Interrupt mask
     interrupt_mask: u1,
-    reserved: u15,
+    /// 00=one-shot, 01=periodic, 10=TSC-deadline
+    timer_mode: u2,
+    reserved: u13,
     pub fn init(vector: u8, mask: bool) Lvt {
         return Lvt{
             .vector = vector,
@@ -202,6 +204,7 @@ pub const Lvt = packed struct(u32) {
             // APIC spec requires to zero out all of the read‑only and reserved bits
             .delivery_status = 0,
             .remote_irr = 0,
+            .timer_mode = 0b00,
             .reserved = 0,
         };
     }
