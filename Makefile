@@ -24,8 +24,8 @@ QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
 # memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
 # generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
-QEMU_COMMON_FLAGS          := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -serial stdio -no-reboot -no-shutdown
-QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -smp cores=2 -no-reboot -no-shutdown -S -s -serial file:debug_log
+QEMU_COMMON_FLAGS          := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu host,+tsc,+invtsc,+tsc-deadline --enable-kvm -serial stdio -no-reboot -no-shutdown
+QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu host,+tsc,+invtsc,+tsc-deadline --enable-kvm -no-reboot -no-shutdown -S -s -serial stdio
 
 $(BUILD_DIR):
 	@mkdir $(BUILD_DIR)
@@ -45,7 +45,7 @@ $(EFI_DIR):  | $(ISO_DIR)
 # run using OVMF (UEFI)
 .PHONY: run
 run: $(OVMF_DIR)/$(OVMF_FILE) $(ISO_FILE)
-	$(QEMU) -bios $(OVMF_DIR)/$(OVMF_FILE) -M smm=off $(QEMU_COMMON_FLAGS)
+	$(QEMU) -bios $(OVMF_DIR)/$(OVMF_FILE) $(QEMU_COMMON_FLAGS)
 
 # debug using QEMU and GDB
 .PHONY: debug
