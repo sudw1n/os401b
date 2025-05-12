@@ -9,6 +9,9 @@ const idt = lib.idt;
 const lapic = lib.lapic;
 const ioapic = lib.ioapic;
 const pit = lib.pit;
+const hpet = lib.hpet;
+const lapic_timer = lib.lapic_timer;
+const tsc = lib.tsc;
 const registers = lib.registers;
 const paging = lib.paging;
 const acpi = lib.acpi;
@@ -28,11 +31,15 @@ pub const std_options = std.Options{
             .level = .info,
         },
         .{
-            .scope = .apic,
+            .scope = .lapic,
             .level = .info,
         },
         .{
             .scope = .acpi,
+            .level = .info,
+        },
+        .{
+            .scope = .idt,
             .level = .info,
         },
     },
@@ -72,7 +79,7 @@ pub fn kmain() Error!void {
     // spawn a shell
     log.info("spawning the shell", .{});
     try shell();
-
+    while (true) {}
 }
 
 fn init() Error!void {
@@ -112,6 +119,7 @@ fn init() Error!void {
     try term.logStepBegin("Initializing APICs", .{});
     lapic.init();
     ioapic.init(rsdp_response);
+    ioapic.routePit();
     try term.logStepEnd(true);
 }
 
