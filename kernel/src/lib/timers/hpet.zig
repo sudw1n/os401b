@@ -69,10 +69,32 @@ pub const Hpet = struct {
         self.general_configuration.enable_cnf = 1;
     }
 
+    /// Sleep for the given number of nanoseconds
+    pub fn sleep(self: Hpet, ns: u64) void {
+        // femtoseconds
+        const fs = ns * 1_000_000;
+        // how many ticks are needed
+        const ticks = fs / self.general_capabilities.precision;
+        const start_counter = self.readCounter();
+        const target_counter = start_counter + ticks;
+
+        // busy-wait loop
+        while (self.readCounter() < target_counter) {
+            // Spin Loop Hint
+            // see: https://www.felixcloutier.com/x86/pause.html
+            asm volatile ("pause");
+        }
+    }
+
     /// Return the main counter of the HPET as a number of femtoseconds since it was last reset.
     pub fn poll(self: Hpet) u64 {
         const period = self.general_capabilities.precision;
-        return self.counter.* * period;
+        self.readCounter() * period;
+    }
+
+    /// Return the main counter value
+    pub fn readCounter(self: Hpet) u64 {
+        return self.counter.*;
     }
 
     /// Program a HPET comparator to fire an interrupt at a fixed, periodic interval.
