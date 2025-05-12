@@ -44,7 +44,7 @@ This will run QEMU with the legacy BIOS.
 - [x] Paging
 - [x] ACPI Tables
 - [x] APIC
-- [ ] Timer
+- [x] Timer
 - [ ] Keyboard
 - [ ] Virtual Memory Allocator
 - [ ] Scheduler
