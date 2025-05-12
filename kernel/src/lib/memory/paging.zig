@@ -5,6 +5,7 @@ const registers = @import("../registers.zig");
 
 const log = std.log.scoped(.paging);
 const ArrayBitSet = std.bit_set.ArrayBitSet;
+const Range = std.bit_set.Range;
 const BitmapEntryType = u64;
 const Bitmap = ArrayBitSet(BitmapEntryType, TOTAL_PAGES);
 
@@ -32,7 +33,7 @@ pub const TOTAL_PAGES = blk: {
 };
 
 var HHDM_OFFSET: u64 = 0;
-var allocator: PhysicalMemoryManager = undefined;
+pub var global_pmm: PhysicalMemoryManager = undefined;
 var pml4: *PML4 = undefined;
 
 pub const PhysicalMemoryManager = struct {
@@ -42,7 +43,7 @@ pub const PhysicalMemoryManager = struct {
     // In our bitmap, each bit represents a page:
     //   0 -> reserved, 1 -> free
     free_bitmap: Bitmap,
-    pub fn init(memory_map: *limine.MemoryMapResponse) PhysicalMemoryManager {
+    pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) PhysicalMemoryManager {
         // Attempt to obtain the memory map response from Limine.
         const entries = memory_map.getEntries();
         if (entries.len == 0) {
@@ -67,26 +68,74 @@ pub const PhysicalMemoryManager = struct {
                 const end_page = addressToPage(base + length);
                 // Mark pages in this region as free
                 bitmap.setRangeValue(.{ .start = start_page, .end = end_page }, true);
-                total_usable += length;
+                total_usable += (end_page - start_page) * PAGE_SIZE;
             }
         }
         // also mark the pages occupied by the kernel itself
-        const kernel_bytes = @intFromPtr(&__kernel_end) - @intFromPtr(&__kernel_start);
-        total_usable -= kernel_bytes;
-        const kernel_pages = bytesToPage(kernel_bytes);
-        // null page is already reserved
-        log.debug("Marking kernel pages as reserved: {d} pages", .{kernel_pages});
-        bitmap.setRangeValue(.{ .start = 1, .end = kernel_pages }, false);
+        const kernel_regions = &[_]Range{
+            .{
+                .start = @intFromPtr(&__limine_requests_start),
+                .end = @intFromPtr(&__limine_requests_end),
+            },
+            .{
+                .start = @intFromPtr(&__kernel_code_start),
+                .end = @intFromPtr(&__kernel_code_end),
+            },
+
+            .{
+                .start = @intFromPtr(&__kernel_rodata_start),
+                .end = @intFromPtr(&__kernel_rodata_end),
+            },
+
+            .{
+                .start = @intFromPtr(&__kernel_data_start),
+                .end = @intFromPtr(&__kernel_data_end),
+            },
+            .{
+                .start = @intFromPtr(&__kernel_bss_start),
+                .end = @intFromPtr(&__kernel_bss_end),
+            },
+            .{
+                .start = @intFromPtr(&__kernel_stack_bottom),
+                .end = @intFromPtr(&__kernel_stack_top),
+            },
+        };
+
+        const vbase = executable_address_response.virtual_base;
+        const pbase = executable_address_response.physical_base;
+
+        for (kernel_regions) |reg| {
+            const start = reg.start;
+            const length = reg.end - start;
+            const offset = start - vbase; // how far into the kernel base is this pointer
+            const phys_start = pbase + offset; // location in RAM for that offset
+            const phys_end = phys_start + length;
+            log.info("Kernel region: {x:0>16} - {x:0>16}", .{ phys_start, phys_end });
+            const phys_start_page = addressToPage(phys_start);
+            const phys_end_page = addressToPage(phys_end);
+            // doing this because the next line might not result in any new pages being reserved
+            const initial_count = bitmap.count();
+            bitmap.setRangeValue(.{ .start = phys_start_page, .end = phys_end_page }, false);
+            const final_count = bitmap.count();
+            // if there were more pages free than now
+            if (initial_count > final_count) {
+                // it's likely that we've already reserved those pages
+                @branchHint(.unlikely);
+                // find out how many pages are now reserved and then reduce our total usable memory
+                // counter accordingly
+                const diff = initial_count - final_count;
+                total_usable -= diff * PAGE_SIZE;
+            }
+        }
 
         log.info("Total usable memory: {d} MiB", .{total_usable / 1024 / 1024});
-        std.debug.assert(bitmap.count() == bytesToPage(total_usable));
-
+        std.debug.assert(bitmap.count() == addressToPage(total_usable));
         return PhysicalMemoryManager{ .free_bitmap = bitmap };
     }
     /// Allocate pages that fit given size
     pub fn alloc(self: *PhysicalMemoryManager, size: u64) []u8 {
         // how many pages needed to fullfill this allocation
-        const pages_needed = bytesToPage(size);
+        const pages_needed = addressToPage(size);
         const startPage = self.findContiguous(pages_needed);
         // mark the range as reserved
         self.free_bitmap.setRangeValue(.{ .start = startPage, .end = startPage + pages_needed }, false);
@@ -118,7 +167,7 @@ pub const PhysicalMemoryManager = struct {
     /// Returns false if the page is already free (double-free).
     pub fn free(self: *PhysicalMemoryManager, bytes: []u8) !void {
         const size = bytes.len;
-        const pages = bytesToPage(size);
+        const pages = addressToPage(size);
         const address = @intFromPtr(bytes.ptr);
         std.debug.assert(address % PAGE_SIZE == 0);
         const startPage = addressToPage(address);
@@ -245,7 +294,7 @@ pub const PageTable = struct {
     /// Allocate a page table
     pub fn init() *PageTable {
         // Allocate a 4096-byte block for the page table.
-        const mem = physToVirt([]u8, allocator.alloc(@sizeOf(PageTable)));
+        const mem = physToVirt([]u8, global_pmm.alloc(@sizeOf(PageTable)));
         return @as(*PageTable, @ptrCast(@alignCast(mem)));
     }
     /// Initialize a page table with zeroed entries.
@@ -260,7 +309,7 @@ pub const PageTable = struct {
         // Deallocate the page table.
         const ptr = @as([*]u8, @ptrCast(self));
         const len = @sizeOf(PageTable);
-        allocator.free(ptr[0..len]);
+        global_pmm.free(ptr[0..len]);
     }
 };
 
@@ -273,7 +322,7 @@ pub const PT = PageTable;
 /// PML4 -> PDPT -> PageDirectory -> PT -> Physical Frame
 pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse, hhdm_offset: u64) void {
     HHDM_OFFSET = hhdm_offset;
-    allocator = PhysicalMemoryManager.init(memory_map);
+    global_pmm = PhysicalMemoryManager.init(memory_map, executable_address_response);
 
     pml4 = PML4.initZero();
     log.debug("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
@@ -306,8 +355,12 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
 
 // map own stack and code regions
 fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
-    const regions = &[_]struct {
-        name: []const u8,
+    const vbase = executable_address_response.virtual_base;
+    const pbase = executable_address_response.physical_base;
+
+    // The regions of the kernel with appropriate permissions for page table setup
+    const kernel_regions = &[_]struct {
+        name: [:0]const u8,
         start: u64,
         end: u64,
         flags: []const PageTableEntryFlags,
@@ -360,10 +413,7 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
         },
     };
 
-    const vbase = executable_address_response.virtual_base;
-    const pbase = executable_address_response.physical_base;
-
-    for (regions) |reg| {
+    for (kernel_regions) |reg| {
         const virt = reg.start;
         const length = reg.end - reg.start;
         const offset = virt - vbase; // how far into the kernel base is this pointer
@@ -381,7 +431,7 @@ pub fn mapRange(
     length: u64,
     flags: []const PageTableEntryFlags,
 ) void {
-    const pages: u64 = bytesToPage(length);
+    const pages: u64 = addressToPage(length);
     for (0..pages) |i| {
         const offset = pageToAddress(i);
         mapPage(virt_addr + offset, phys_addr + offset, flags);
@@ -460,15 +510,8 @@ fn pageToAddress(page: u64) u64 {
     return page * PAGE_SIZE;
 }
 
-fn bytesToPage(bytes: u64) u64 {
-    return std.math.divCeil(u64, bytes, PAGE_SIZE) catch {
-        @branchHint(.unlikely);
-        @panic("bytesToPage: Divide error");
-    };
-}
-
 fn addressToPage(address: u64) u64 {
-    return address / PAGE_SIZE;
+    return std.math.divCeil(u64, address, PAGE_SIZE) catch @panic("addressToPage: division error");
 }
 
 // Return virtual address (at HHDM offset) of the slice
