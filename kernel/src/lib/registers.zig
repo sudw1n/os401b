@@ -166,13 +166,14 @@ pub const Msr = enum(u32) {
 
     /// Write a 64‑bit MSR
     pub inline fn write(self: Msr, value: u64) void {
-        var low: u32 = @truncate(value);
-        var high: u32 = @truncate(value >> 32);
+        const low: u32 = @truncate(value);
+        const high: u32 = @truncate(value >> 32);
         asm volatile (
             \\ wrmsr
-            : [low] "={eax}" (low), // EAX ← low 32 bits
-              [high] "={edx}" (high), // EDX ← high 32 bits
-            : [msr] "{ecx}" (self), // ECX ← MSR index
+            :
+            : [low] "{eax}" (low), // EAX ← low 32 bits
+              [high] "{edx}" (high), // EDX ← high 32 bits
+              [msr] "{ecx}" (self), // ECX ← MSR index
             : "memory" // prevent reordering around MSR access
         );
     }
