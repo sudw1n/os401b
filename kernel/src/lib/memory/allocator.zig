@@ -101,10 +101,6 @@ pub const Allocator = struct {
         const min_payload_size = 0x10;
         const size = @max(len, min_payload_size);
 
-        if (self.end_index + size >= self.heap.len - min_payload_size) {
-            self.expand() orelse return null;
-        }
-
         var node = self.chunks_head;
         while (node) |hdr| {
             if (hdr.size >= size and hdr.status == .Free) {
@@ -153,6 +149,10 @@ pub const Allocator = struct {
         const adjust_off = std.mem.alignPointerOffset(self.heap.ptr + self.end_index, header_align) orelse return null;
         log.debug("adjusting end_index by {x} bytes to align header", .{adjust_off});
         self.end_index += adjust_off;
+
+        if (self.end_index + size >= self.heap.len - min_payload_size) {
+            self.expand() orelse return null;
+        }
 
         // typecast the current position to a ChunkHeader pointer
         log.debug("allocating new chunk at {x:0>16}:{x}", .{ @intFromPtr(self.heap[self.end_index..].ptr), size });
