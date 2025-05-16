@@ -326,7 +326,7 @@ pub const VirtualMemoryManager = struct {
         self.free(ptr);
     }
 
-    pub fn switchTo(self: *VirtualMemoryManager) void {
+    pub fn activate(self: *VirtualMemoryManager) void {
         // Switch to the page table root for this address space
         paging.switchToPML4(self.pt_root);
     }
