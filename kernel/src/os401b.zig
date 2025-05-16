@@ -20,6 +20,8 @@ pub const hpet = @import("lib/timers/hpet.zig");
 pub const lapic_timer = @import("lib/timers/lapic_timer.zig");
 pub const tsc = @import("lib/timers/tsc.zig");
 
+pub const ps2 = @import("lib/keyboard/ps2.zig");
+
 pub const SerialWriter = serial.SerialWriter;
 
 pub const SerialError = serial.SerialError;
