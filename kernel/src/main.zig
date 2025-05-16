@@ -12,6 +12,7 @@ const pit = lib.pit;
 const hpet = lib.hpet;
 const lapic_timer = lib.lapic_timer;
 const tsc = lib.tsc;
+const ps2 = lib.ps2;
 const registers = lib.registers;
 const paging = lib.paging;
 const acpi = lib.acpi;
@@ -122,6 +123,9 @@ fn init() Error!void {
     ioapic.routeVectors();
     try term.logStepEnd(true);
 
+    try term.logStepBegin("Initializing keyboard", .{});
+    ps2.init();
+    try term.logStepEnd(true);
 }
 
 fn welcome() Error!void {
