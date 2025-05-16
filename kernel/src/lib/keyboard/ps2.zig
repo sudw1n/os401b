@@ -71,6 +71,14 @@ pub const Ps2Driver = struct {
         self.allocator.free(self.buffer);
         self.allocator.destroy(self);
     }
+
+    pub fn getChar(self: *Ps2Driver) ?u8 {
+        if (self.buf_position == 0) return null;
+        const e = self.buffer[(self.buf_position - 1)];
+        self.buf_position -= 1;
+        return translateKeyEvent(e);
+    }
+
     pub fn processScancode(self: *Ps2Driver, code: u8) void {
         if (code == 0xE0) {
             // this is a prefix byte, so we go to the prefix state
@@ -87,40 +95,6 @@ pub const Ps2Driver = struct {
         if (self.current_state == .Prefix) {
             // if we were in the prefix state, we go back to the normal state
             self.current_state = .Normal;
-        }
-    }
-
-    fn displayKeyEvent(event: KeyEvent) void {
-        const c: ?u8 = blk: switch (event.code) {
-            .Tab => {
-                break :blk '\t';
-            },
-            .Enter => {
-                break :blk '\n';
-            },
-            .Backspace => {
-                break :blk '\x0E';
-            },
-            else => {
-                const raw: u8 = @intFromEnum(event.code);
-                // If Shift is down, try the shifted map first
-                if (Modifier.Shift.check(event.status_mask)) {
-                    if (raw < set1_shift_ascii_map.len and set1_shift_ascii_map[raw] != 0) {
-                        break :blk set1_shift_ascii_map[raw];
-                    }
-                }
-                if (raw < set1_ascii_map.len and set1_ascii_map[raw] != 0) {
-                    const c = set1_ascii_map[raw];
-                    if (Modifier.CapsLock.check(event.status_mask) or Modifier.Shift.check(event.status_mask)) {
-                        break :blk std.ascii.toUpper(c);
-                    }
-                    break :blk c;
-                }
-                break :blk null;
-            },
-        };
-        if (c) |char| {
-            term.print("{c}", .{char}) catch @panic("failed to write character to terminal");
         }
     }
 
@@ -154,6 +128,39 @@ pub const Ps2Driver = struct {
         };
     }
 };
+
+pub fn translateKeyEvent(event: KeyEvent) ?u8 {
+    if (event.type != .Make) return null;
+    const c: ?u8 = blk: switch (event.code) {
+        .Tab => {
+            break :blk '\t';
+        },
+        .Enter => {
+            break :blk '\n';
+        },
+        .Backspace => {
+            break :blk '\x0E';
+        },
+        else => {
+            const raw: u8 = @intFromEnum(event.code);
+            // If Shift is down, try the shifted map first
+            if (Modifier.Shift.check(event.status_mask)) {
+                if (raw < set1_shift_ascii_map.len and set1_shift_ascii_map[raw] != 0) {
+                    break :blk set1_shift_ascii_map[raw];
+                }
+            }
+            if (raw < set1_ascii_map.len and set1_ascii_map[raw] != 0) {
+                const c = set1_ascii_map[raw];
+                if (Modifier.CapsLock.check(event.status_mask) or Modifier.Shift.check(event.status_mask)) {
+                    break :blk std.ascii.toUpper(c);
+                }
+                break :blk c;
+            }
+            break :blk null;
+        },
+    };
+    return c;
+}
 
 // TODO: add support for extended scancodes (0xE0 prefix)
 
