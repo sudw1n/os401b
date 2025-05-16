@@ -6,77 +6,14 @@ const log = std.log.scoped(.ps2);
 const out = cpu.out;
 const in = cpu.in;
 
-const Port = enum(u8) {
-    /// Data Port:
-    /// R/W transfers actual keyboard bytes (make- and break-codes, replies to commands, etc.)
-    ///
-    /// Commands to the keyboard ("switch your scancode set") always go to this port.
-    Data = 0x60,
-    /// Status/Command Port:
-    /// Read -> Status register (to poll busy/full flags)
-    /// Write -> Controller commands
-    ///
-    /// Commands to the controller ("give me the config byte") always go to this port.
-    StatusCommand = 0x64,
-    pub fn asU8(self: Port) u8 {
-        return @intFromEnum(self);
-    }
-    pub fn get(self: Port) u8 {
-        return in(u8, self.asU8());
-    }
-    pub fn set(self: Port, value: u8) void {
-        out(u8, self.asU8(), value);
-    }
-    pub fn read(self: Port) u8 {
-        // if reading from Data port, wait until output buffer full
-        if (self == Port.Data) {
-            while (!check(StatusFlag.OutputBufferFull)) {
-                asm volatile ("pause");
-            }
-        }
-        return self.get();
-    }
-    pub fn write(self: Port, value: u8) void {
-        // wait until input buffer is empty
-        while (check(StatusFlag.InputBufferFull)) {
-            asm volatile ("pause");
-        }
-        self.set(value);
-    }
-};
-
-const KeyboardSet = union(KeyboardSetType) {
-    Set1: *Set1,
-    Set2: *Set2,
-    Set3: *Set3,
-};
-
-const KeyboardSetType = enum {
-    Set1,
-    Set2,
-    Set3,
-};
-
-const Set1 = struct {};
-const Set2 = struct {};
-const Set3 = struct {};
-
 pub fn handle() void {
     log.debug("handling keyboard", .{});
 }
 
 pub fn init() void {
-    // try to set the keyboard to use a scancode we support
-    switch (getScancodeSetUsed()) {
-        .Set2, .Set3 => {
-            if (!checkTranslation()) {
-                log.warn("PS/2 controller translation isn't enabled, enabling", .{});
-                enableTranslation();
-            }
-            log.info("switching to Set1", .{});
-            keyboardUseSet(.Set1);
-        },
-        else => {},
+    if (!checkTranslation()) {
+        log.info("Enabling PS/2 controller translation", .{});
+        enableTranslation();
     }
 }
 
@@ -85,36 +22,34 @@ fn keyboardUseSet(set: KeyboardSetType) void {
     flushOutputBuffer();
 
     // command to get/set the scancode set
-    const command1 = 0xF0;
-    const command2: u8 = switch (set) {
+    const command = 0xF0;
+    writeWithAck(command);
+
+    const param: u8 = switch (set) {
         .Set1 => 0x1,
         .Set2 => 0x2,
         .Set3 => 0x3,
     };
-    Port.Data.write(command1);
-    Port.Data.write(command2);
+    writeWithAck(param);
 }
 
-pub fn getScancodeSetUsed() KeyboardSetType {
+fn getScancodeSetUsed() KeyboardSetType {
     // start from a clean slate
     flushOutputBuffer();
 
     // command to get/set the scancode set
-    const command1 = 0xF0;
-    // 0 -> get current set
-    const command2 = 0x00;
-    Port.Data.write(command1);
-    Port.Data.write(command2);
+    const command = 0xF0;
+    writeWithAck(command);
 
-    // since we are reading the current used set, the response will be 0xFA followed by one of the
-    // below values:
+    // 0 -> get current set
+    const param = 0x00;
+    writeWithAck(param);
+
+    // since we are reading the current used set, the response will be followed by one of the below
+    // values:
     // 0x43 -> scancode set 1
     // 0x41 -> scancode set 2
     // 0x3f -> scancode set 3
-    const ack = Port.Data.read();
-    if (ack != 0xFA) {
-        @panic("failed to get scancode set");
-    }
     const set = Port.Data.read();
     switch (set) {
         0x43 => return KeyboardSetType.Set1,
@@ -123,13 +58,6 @@ pub fn getScancodeSetUsed() KeyboardSetType {
         else => @panic("invalid byte returned while getting scancode set"),
     }
 }
-
-const ConfigFlag = enum(u8) {
-    Translation = 1 << 6,
-    pub fn asU8(self: ConfigFlag) u8 {
-        return @intFromEnum(self);
-    }
-};
 
 /// Normally the PS/2 controller converts the set 2 scancodes into set 1 (for legacy reasons), this
 /// function checks if the translation is enabled.
@@ -177,9 +105,75 @@ fn flushOutputBuffer() void {
     }
 }
 
+/// Check if the given status flag is set in the status register
 fn check(status: StatusFlag) bool {
     return (Port.StatusCommand.get() & @intFromEnum(status)) != 0;
 }
+
+/// Write with acknowledgement
+fn writeWithAck(value: u8) void {
+    while (true) {
+        Port.Data.write(value);
+        const response = Port.Data.read();
+        // ACK
+        if (response == 0xFA) return;
+        // Resend
+        if (response == 0xFE) continue;
+        @panic("unexpected response from PS/2 keyboard");
+    }
+}
+
+const Port = enum(u8) {
+    /// Data Port:
+    /// R/W transfers actual keyboard bytes (make- and break-codes, replies to commands, etc.)
+    ///
+    /// Commands to the keyboard ("switch your scancode set") always go to this port.
+    Data = 0x60,
+    /// Status/Command Port:
+    /// Read -> Status register (to poll busy/full flags)
+    /// Write -> Controller commands
+    ///
+    /// Commands to the controller ("give me the config byte") always go to this port.
+    StatusCommand = 0x64,
+    pub fn asU8(self: Port) u8 {
+        return @intFromEnum(self);
+    }
+    pub fn get(self: Port) u8 {
+        return in(u8, self.asU8());
+    }
+    pub fn set(self: Port, value: u8) void {
+        out(u8, self.asU8(), value);
+    }
+    pub fn read(self: Port) u8 {
+        // if reading from Data port, wait until output buffer full
+        if (self == Port.Data) {
+            while (!check(StatusFlag.OutputBufferFull)) {
+                asm volatile ("pause");
+            }
+        }
+        return self.get();
+    }
+    pub fn write(self: Port, value: u8) void {
+        // wait until input buffer is empty
+        while (check(StatusFlag.InputBufferFull)) {
+            asm volatile ("pause");
+        }
+        self.set(value);
+    }
+};
+
+const KeyboardSetType = enum {
+    Set1,
+    Set2,
+    Set3,
+};
+
+const ConfigFlag = enum(u8) {
+    Translation = 1 << 6,
+    pub fn asU8(self: ConfigFlag) u8 {
+        return @intFromEnum(self);
+    }
+};
 
 const StatusFlag = enum(u8) {
     /// Output buffer status.
