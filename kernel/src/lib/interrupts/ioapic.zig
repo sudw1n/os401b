@@ -213,6 +213,7 @@ pub const Lvt = packed struct(u32) {
 /// Interrupt vectors handled by the I/O APIC
 pub const InterruptVectors = enum(u8) {
     PitTimer = 0x20,
+    Keyboard = 0x21,
     HpetTimer = 0x30,
     pub fn get(self: InterruptVectors) u8 {
         return @intFromEnum(self);
@@ -242,10 +243,24 @@ pub fn init(rsdp_response: *limine.RsdpResponse) void {
     global_ioapic = IoApic.init(entry);
 }
 
+/// Program the I/O APIC to route all the necessary interrupts to the LAPIC
+pub fn routeVectors() void {
+    routePit();
+    routeKeyboard();
+}
+
 /// Program the I/O APIC to route the PIT timer interrupts to the LAPIC
-pub fn routePit() void {
+fn routePit() void {
     // since we're using UEFI the PIT should appear as IRQ 2
     const pin = 2;
     const lvt = Lvt.init(InterruptVectors.PitTimer.get(), false);
+    global_ioapic.program(pin, lvt, lapic.global_lapic.id());
+}
+
+/// Program the I/O APIC to route the keyboard interrupts to the LAPIC
+fn routeKeyboard() void {
+    // The PS/2 Keyboard is IRQ 1
+    const pin = 1;
+    const lvt = Lvt.init(InterruptVectors.Keyboard.get(), false);
     global_ioapic.program(pin, lvt, lapic.global_lapic.id());
 }

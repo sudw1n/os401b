@@ -119,8 +119,9 @@ fn init() Error!void {
     try term.logStepBegin("Initializing APICs", .{});
     lapic.init();
     ioapic.init(rsdp_response);
-    ioapic.routePit();
+    ioapic.routeVectors();
     try term.logStepEnd(true);
+
 }
 
 fn welcome() Error!void {
