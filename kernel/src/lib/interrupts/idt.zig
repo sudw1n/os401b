@@ -11,6 +11,7 @@ const gdtlib = @import("../gdt.zig");
 const cpu = @import("../cpu.zig");
 const lapic = @import("lapic.zig");
 const ioapic = @import("ioapic.zig");
+const ps2 = @import("../keyboard/ps2.zig");
 const registers = @import("../registers.zig");
 const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
@@ -216,12 +217,16 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
     const vector: u8 = @intCast(frame.vector_number);
     // We need to send EOI for APIC interrupts
     if (LApicInterrupts.is(vector) or IoApicInterrupts.is(vector)) {
-        // but the spurious vectors should be ignored
+        // but the spurious vector should be ignored
         if (vector == LApicInterrupts.Spurious.get()) {
             log.debug("Received spurious interrupt, ignoring...", .{});
             return;
+        } else if (vector == IoApicInterrupts.Keyboard.get()) {
+            log.debug("Received keyboard interrupt, forwarding to PS/2 module", .{});
+            ps2.handle();
+            return;
         }
-        log.debug("Received APIC interrupt, sending EOI...", .{});
+        log.debug("Received APIC interrupt with vector 0x{x}, sending EOI...", .{vector});
         lapic.global_lapic.sendEoi();
         return;
     }
