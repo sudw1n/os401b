@@ -157,17 +157,17 @@ pub const Registers = enum(u32) {
 pub var global_lapic: LApic = undefined;
 
 pub fn init() void {
-    log.info("Checking APIC support", .{});
     if (!checkApic()) {
         @panic("APIC not supported");
     }
+    log.info("Found APIC support", .{});
 
-    log.info("Disabling the 8259 PIC", .{});
     disablePic();
+    log.info("Disabled the 8259 PIC", .{});
 
-    log.info("Initializing LAPIC", .{});
     global_lapic = LApic.init();
     global_lapic.enableSpurious();
+    log.info("Initialized the LAPIC", .{});
 }
 
 /// The various interrupt vectors handled by APIC
