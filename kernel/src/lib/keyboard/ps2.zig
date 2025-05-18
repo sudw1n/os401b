@@ -6,14 +6,59 @@ const log = std.log.scoped(.ps2);
 const out = cpu.out;
 const in = cpu.in;
 
+const SET: KeyboardSetType = .Set2;
+
 pub fn handle() void {
-    log.debug("handling keyboard", .{});
+    lapic.global_lapic.sendEoi();
+    // the fact that the CPU just interrupted us already guarantees there's a byte waiting in the
+    // output buffer, so we don't use our normal `read()` instead just go for the raw `get()`
+    const scancode = Port.Data.get();
+    const processed_code = processScancode(scancode);
+    log.debug("{}", .{processed_code});
 }
 
 pub fn init() void {
-    if (!checkTranslation()) {
-        log.info("Enabling PS/2 controller translation", .{});
-        enableTranslation();
+    log.debug("Initializing PS/2 keyboard", .{});
+    keyboardUseSet(SET);
+    flushOutputBuffer();
+}
+
+fn processScancode(code: u8) ScanCode {
+    switch (SET) {
+        .Set1 => return getScanCodeSet1(code),
+        .Set2 => return getScancodeSet2(code),
+        .Set3 => @panic("todo: implement scancode set 3"),
+    }
+}
+
+fn getScanCodeSet1(code: u8) ScanCode {
+    // check the MSB
+    // if MSB = 1 it's a break code
+    if (code & (1 << 7) != 0) {
+        return .{
+            .code = code,
+            .type = .Break,
+        };
+    } else {
+        return .{
+            .code = code,
+            .type = .Make,
+        };
+    }
+}
+
+fn getScancodeSet2(code: u8) ScanCode {
+    // scancode is always a MAKE code unless prefixed by a 0xF0 byte
+    if (code == 0xF0) {
+        return .{
+            .code = Port.Data.get(),
+            .type = .Break,
+        };
+    } else {
+        return .{
+            .code = code,
+            .type = .Make,
+        };
     }
 }
 
@@ -78,14 +123,14 @@ fn enableTranslation() void {
     // read current controller config byte
     const controller_config = getConfig();
     // send back the byte with the 6th bit set
-    setConfig(controller_config | @as(u8, (1 << 6)));
+    setConfig(controller_config | ConfigFlag.Translation.asU8());
 }
 
 fn getConfig() u8 {
     // send 0x20 to Command register
-    Port.StatusCommand.write(0x20);
+    Port.StatusCommand.set(0x20);
     // read the reply from Data port
-    return Port.Data.read();
+    return Port.Data.get();
 }
 
 fn setConfig(value: u8) void {
@@ -99,7 +144,7 @@ fn setConfig(value: u8) void {
 fn flushOutputBuffer() void {
     // discard any value in the output buffer until it's no longer full
     while (check(StatusFlag.OutputBufferFull)) {
-        log.debug("flushing buffer", .{});
+        log.debug("flushing keyboard buffer", .{});
         // read the data port
         _ = Port.Data.read();
     }
@@ -160,6 +205,32 @@ const Port = enum(u8) {
         }
         self.set(value);
     }
+};
+
+const ScanCode = struct {
+    /// For Set1:
+    /// 0x00 - 0x7F: make codes
+    /// 0x80 - 0xFF: break codes
+    ///
+    /// For Set2:
+    /// 0x00 - 0xFF: make codes
+    /// 0xF0,0x00-0xFF: break codes
+    code: u8,
+    type: ScanCodeType,
+    pub fn format(value: ScanCode, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        const prefix = switch (value.type) {
+            .Make => "MAKE",
+            .Break => "BREAK",
+        };
+        try writer.print("{s}: 0x{x}", .{ prefix, value.code });
+    }
+};
+
+const ScanCodeType = enum {
+    Make,
+    Break,
 };
 
 const KeyboardSetType = enum {
