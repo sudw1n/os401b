@@ -165,14 +165,13 @@ pub fn init() void {
         .limit = @sizeOf(@TypeOf(gdt_entries)) - 1,
     };
 
-    log.info("Loading GDTR", .{});
+    log.debug("Loading GDTR", .{});
     cpu.lgdt(gdtr);
 
-    log.info("Flushing GDT", .{});
+    log.debug("Flushing GDT", .{});
     asm volatile (
         \\call flushGdt
     );
-    log.info("GDT setup complete", .{});
 }
 
 export fn flushGdt() callconv(.Naked) void {
