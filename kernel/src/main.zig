@@ -120,11 +120,14 @@ fn init() Error!void {
     try term.logStepBegin("Initializing APICs", .{});
     lapic.init();
     ioapic.init(rsdp_response);
-    ioapic.routeVectors();
     try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing keyboard", .{});
     ps2.init();
+    try term.logStepEnd(true);
+
+    try term.logStepBegin("Unmasking IRQ lines", .{});
+    ioapic.routeVectors();
     try term.logStepEnd(true);
 }
 
