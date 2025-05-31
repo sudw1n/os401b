@@ -87,8 +87,9 @@ pub fn logStepEnd(success: bool) TtyError!void {
 fn writeStr(bytes: []const u8) TtyError!void {
     for (bytes) |char| {
         switch (char) {
-            '\r', '\n' => try newLine(),
+            '\r', '\n' => try newline(),
             '\t' => try tab(),
+            '\x0E' => try backspace(),
             else => try writeChar(char),
         }
     }
@@ -113,7 +114,26 @@ fn writeChar(char: u8) TtyError!void {
     cursor += 1;
 }
 
-fn newLine() TtyError!void {
+// TODO: there's a small bug here. if we backspace at the beginning of a line, we can't type anymore
+// characters.
+fn backspace() TtyError!void {
+    // If we're already at the very beginning, go to the previous line
+    if (cursor == 0) return;
+
+    // Move the cursor back one position:
+    cursor -= 1;
+
+    // Compute the pixel‐coordinates of the “new” cursor location:
+    const col = cursor % width;
+    const row = cursor / width;
+    const x = col * framebuffer.font.hdr.width;
+    const y = row * framebuffer.font.hdr.height;
+
+    // Draw a space there (in fg/bg) to “erase” the old character:
+    try framebuffer.drawChar(' ', x, y, fg, bg);
+}
+
+fn newline() TtyError!void {
     while (true) {
         // add additional spaces to fill the row
         try writeChar(' ');
