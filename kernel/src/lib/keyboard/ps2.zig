@@ -1,6 +1,7 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
 const lapic = @import("../interrupts/lapic.zig");
+const term = @import("../tty/terminal.zig");
 
 const log = std.log.scoped(.ps2);
 const out = cpu.out;
@@ -36,6 +37,7 @@ pub const Ps2Driver = struct {
     /// To handle multi-byte scancodes, we implement a simple state machine.
     /// This holds the current state of the state machine.
     current_state: State,
+    current_modifiers: u8 = Modifier.None.asU8(),
 
     const State = enum {
         /// The normal state, where we expect to receive a single byte
@@ -46,7 +48,7 @@ pub const Ps2Driver = struct {
         Prefix,
     };
 
-    const max_buffer_size = 255;
+    const max_buffer_size = 256;
 
     pub fn init() Ps2Driver {
         return Ps2Driver{
@@ -55,40 +57,382 @@ pub const Ps2Driver = struct {
             .current_state = .Normal,
         };
     }
+
     fn processScancode(self: *Ps2Driver, code: u8) void {
         if (code == 0xE0) {
             // this is a prefix byte, so we go to the prefix state
+            log.debug("Prefix byte received, going to Prefix state", .{});
             self.current_state = .Prefix;
             return;
         }
 
-        const key_event = getKeyEvent(code);
-        self.buffer[self.buf_position] = key_event;
-        self.buf_position = (self.buf_position + 1) % max_buffer_size;
-
+        const maybe_event = self.getKeyEvent(code);
+        if (maybe_event) |event| {
+            // Only non‐modifier events should be enqueued into the buffer
+            self.buffer[self.buf_position] = event;
+            self.buf_position = (self.buf_position + 1) % max_buffer_size;
+            if (event.type == .Make) displayKeyEvent(event);
+        }
         if (self.current_state == .Prefix) {
             // if we were in the prefix state, we go back to the normal state
             self.current_state = .Normal;
         }
-
-        log.debug("buffer position: {d}", .{self.buf_position});
-        log.debug("{s}", .{key_event});
     }
 
-    fn getKeyEvent(code: u8) KeyEvent {
-        // check the MSB
-        // if MSB = 1 it's a break code
-        if (code & (1 << 7) != 0) {
-            return .{
-                .code = code,
-                .type = .Break,
-            };
-        } else {
-            return .{
-                .code = code,
-                .type = .Make,
-            };
+    fn displayKeyEvent(event: KeyEvent) void {
+        const c: ?u8 = blk: switch (event.code) {
+            .Tab => {
+                break :blk '\t';
+            },
+            .Enter => {
+                break :blk '\n';
+            },
+            .Backspace => {
+                break :blk '\x0E';
+            },
+            else => {
+                const raw: u8 = @intFromEnum(event.code);
+                if (raw < set1_ascii_map.len and set1_ascii_map[raw] != 0) {
+                    break :blk set1_ascii_map[raw];
+                }
+                break :blk null;
+            },
+        };
+        if (c) |char| {
+            term.print("{c}", .{char}) catch @panic("failed to write character to terminal");
         }
+    }
+
+    fn getKeyEvent(self: *Ps2Driver, code: u8) ?KeyEvent {
+        const is_break = (code & (1 << 7)) != 0;
+        const index = code & ~@as(u8, (1 << 7)); // mask off the MSB
+        const scancode = set1[index];
+        const kind: ScanCodeType = if (is_break) .Break else .Make;
+
+        const modifier = scancode.toModifier();
+
+        if (modifier != Modifier.None) {
+            // capslock is a toggle, so we need to handle it
+            if (modifier == .CapsLock) {
+                modifier.toggle(&self.current_modifiers);
+            } else {
+                if (kind == .Make) {
+                    modifier.set(&self.current_modifiers);
+                } else {
+                    modifier.clear(&self.current_modifiers);
+                }
+            }
+            // modifiers events are encoded in the status_mask field of each key event
+            return null;
+        }
+        // if it's not a modifier, we return a KeyEvent
+        return KeyEvent{
+            .code = scancode,
+            .type = kind,
+            .status_mask = self.current_modifiers,
+        };
+    }
+};
+
+// TODO: add support for extended scancodes (0xE0 prefix)
+
+// Build the full 256-entry scancode table at comptime:
+const set1: [256]Scancode = blk: {
+    var scancode_table: [256]Scancode = undefined;
+
+    // default everything to Unknown
+    for (&scancode_table) |*slot| slot.* = Scancode.Unknown;
+
+    // fill in each of the "make-up" scancodes from Set 1
+    // (we ignore the release bit 0x80 here; mask that out upstream)
+    scancode_table[0x01] = Scancode.Escape;
+    scancode_table[0x02] = Scancode.Digit1;
+    scancode_table[0x03] = Scancode.Digit2;
+    scancode_table[0x04] = Scancode.Digit3;
+    scancode_table[0x05] = Scancode.Digit4;
+    scancode_table[0x06] = Scancode.Digit5;
+    scancode_table[0x07] = Scancode.Digit6;
+    scancode_table[0x08] = Scancode.Digit7;
+    scancode_table[0x09] = Scancode.Digit8;
+    scancode_table[0x0A] = Scancode.Digit9;
+    scancode_table[0x0B] = Scancode.Digit0;
+    scancode_table[0x0C] = Scancode.Minus;
+    scancode_table[0x0D] = Scancode.Equal;
+    scancode_table[0x0E] = Scancode.Backspace;
+    scancode_table[0x0F] = Scancode.Tab;
+
+    scancode_table[0x10] = Scancode.Q;
+    scancode_table[0x11] = Scancode.W;
+    scancode_table[0x12] = Scancode.E;
+    scancode_table[0x13] = Scancode.R;
+    scancode_table[0x14] = Scancode.T;
+    scancode_table[0x15] = Scancode.Y;
+    scancode_table[0x16] = Scancode.U;
+    scancode_table[0x17] = Scancode.I;
+    scancode_table[0x18] = Scancode.O;
+    scancode_table[0x19] = Scancode.P;
+    scancode_table[0x1A] = Scancode.LBracket;
+    scancode_table[0x1B] = Scancode.RBracket;
+    scancode_table[0x1C] = Scancode.Enter;
+    scancode_table[0x1D] = Scancode.LControl;
+
+    scancode_table[0x1E] = Scancode.A;
+    scancode_table[0x1F] = Scancode.S;
+    scancode_table[0x20] = Scancode.D;
+    scancode_table[0x21] = Scancode.F;
+    scancode_table[0x22] = Scancode.G;
+    scancode_table[0x23] = Scancode.H;
+    scancode_table[0x24] = Scancode.J;
+    scancode_table[0x25] = Scancode.K;
+    scancode_table[0x26] = Scancode.L;
+    scancode_table[0x27] = Scancode.Semicolon;
+    scancode_table[0x28] = Scancode.Quote;
+    scancode_table[0x29] = Scancode.Grave;
+
+    scancode_table[0x2A] = Scancode.LShift;
+    scancode_table[0x2B] = Scancode.Backslash;
+    scancode_table[0x2C] = Scancode.Z;
+    scancode_table[0x2D] = Scancode.X;
+    scancode_table[0x2E] = Scancode.C;
+    scancode_table[0x2F] = Scancode.V;
+    scancode_table[0x30] = Scancode.B;
+    scancode_table[0x31] = Scancode.N;
+    scancode_table[0x32] = Scancode.M;
+    scancode_table[0x33] = Scancode.Comma;
+    scancode_table[0x34] = Scancode.Dot;
+    scancode_table[0x35] = Scancode.Slash;
+    scancode_table[0x36] = Scancode.RShift;
+
+    scancode_table[0x37] = Scancode.KPadAsterisk;
+    scancode_table[0x38] = Scancode.LAlt;
+    scancode_table[0x39] = Scancode.Space;
+    scancode_table[0x3A] = Scancode.CapsLock;
+
+    scancode_table[0x3B] = Scancode.F1;
+    scancode_table[0x3C] = Scancode.F2;
+    scancode_table[0x3D] = Scancode.F3;
+    scancode_table[0x3E] = Scancode.F4;
+    scancode_table[0x3F] = Scancode.F5;
+    scancode_table[0x40] = Scancode.F6;
+    scancode_table[0x41] = Scancode.F7;
+    scancode_table[0x42] = Scancode.F8;
+    scancode_table[0x43] = Scancode.F9;
+    scancode_table[0x44] = Scancode.F10;
+
+    scancode_table[0x45] = Scancode.NumLock;
+    scancode_table[0x46] = Scancode.ScrollLock;
+
+    scancode_table[0x47] = Scancode.KPad7;
+    scancode_table[0x48] = Scancode.KPad8;
+    scancode_table[0x49] = Scancode.KPad9;
+    scancode_table[0x4A] = Scancode.KPadMinus;
+    scancode_table[0x4B] = Scancode.KPad4;
+    scancode_table[0x4C] = Scancode.KPad5;
+    scancode_table[0x4D] = Scancode.KPad6;
+    scancode_table[0x4E] = Scancode.KPadPlus;
+    scancode_table[0x4F] = Scancode.KPad1;
+    scancode_table[0x50] = Scancode.KPad2;
+    scancode_table[0x51] = Scancode.KPad3;
+    scancode_table[0x52] = Scancode.KPad0;
+    scancode_table[0x53] = Scancode.KPadDot;
+
+    scancode_table[0x57] = Scancode.F11;
+    scancode_table[0x58] = Scancode.F12;
+
+    // everything else stays as Unknown
+    break :blk scancode_table;
+};
+
+const set1_ascii_map: [Scancode.fields]u8 = blk: {
+    var m: [Scancode.fields]u8 = undefined;
+
+    // default everything to 0 ("not printable")
+    for (&m) |*slot| slot.* = 0;
+
+    m[@intFromEnum(Scancode.Digit0)] = '0';
+    m[@intFromEnum(Scancode.Digit1)] = '1';
+    m[@intFromEnum(Scancode.Digit2)] = '2';
+    m[@intFromEnum(Scancode.Digit3)] = '3';
+    m[@intFromEnum(Scancode.Digit4)] = '4';
+    m[@intFromEnum(Scancode.Digit5)] = '5';
+    m[@intFromEnum(Scancode.Digit6)] = '6';
+    m[@intFromEnum(Scancode.Digit7)] = '7';
+    m[@intFromEnum(Scancode.Digit8)] = '8';
+    m[@intFromEnum(Scancode.Digit9)] = '9';
+
+    m[@intFromEnum(Scancode.A)] = 'A';
+    m[@intFromEnum(Scancode.B)] = 'B';
+    m[@intFromEnum(Scancode.C)] = 'C';
+    m[@intFromEnum(Scancode.D)] = 'D';
+    m[@intFromEnum(Scancode.E)] = 'E';
+    m[@intFromEnum(Scancode.F)] = 'F';
+    m[@intFromEnum(Scancode.G)] = 'G';
+    m[@intFromEnum(Scancode.H)] = 'H';
+    m[@intFromEnum(Scancode.I)] = 'I';
+    m[@intFromEnum(Scancode.J)] = 'J';
+    m[@intFromEnum(Scancode.K)] = 'K';
+    m[@intFromEnum(Scancode.L)] = 'L';
+    m[@intFromEnum(Scancode.M)] = 'M';
+    m[@intFromEnum(Scancode.N)] = 'N';
+    m[@intFromEnum(Scancode.O)] = 'O';
+    m[@intFromEnum(Scancode.P)] = 'P';
+    m[@intFromEnum(Scancode.Q)] = 'Q';
+    m[@intFromEnum(Scancode.R)] = 'R';
+    m[@intFromEnum(Scancode.S)] = 'S';
+    m[@intFromEnum(Scancode.T)] = 'T';
+    m[@intFromEnum(Scancode.U)] = 'U';
+    m[@intFromEnum(Scancode.V)] = 'V';
+    m[@intFromEnum(Scancode.W)] = 'W';
+    m[@intFromEnum(Scancode.X)] = 'X';
+    m[@intFromEnum(Scancode.Y)] = 'Y';
+    m[@intFromEnum(Scancode.Z)] = 'Z';
+
+    m[@intFromEnum(Scancode.Minus)] = '-';
+    m[@intFromEnum(Scancode.Equal)] = '=';
+    m[@intFromEnum(Scancode.LBracket)] = '[';
+    m[@intFromEnum(Scancode.RBracket)] = ']';
+    m[@intFromEnum(Scancode.Semicolon)] = ';';
+    m[@intFromEnum(Scancode.Quote)] = '\'';
+    m[@intFromEnum(Scancode.Grave)] = '`';
+    m[@intFromEnum(Scancode.Backslash)] = '\\';
+    m[@intFromEnum(Scancode.Comma)] = ',';
+    m[@intFromEnum(Scancode.Dot)] = '.';
+    m[@intFromEnum(Scancode.Slash)] = '/';
+    m[@intFromEnum(Scancode.Space)] = ' ';
+
+    // keypad
+    m[@intFromEnum(Scancode.KPad0)] = '0';
+    m[@intFromEnum(Scancode.KPad1)] = '1';
+    m[@intFromEnum(Scancode.KPad2)] = '2';
+    m[@intFromEnum(Scancode.KPad3)] = '3';
+    m[@intFromEnum(Scancode.KPad4)] = '4';
+    m[@intFromEnum(Scancode.KPad5)] = '5';
+    m[@intFromEnum(Scancode.KPad6)] = '6';
+    m[@intFromEnum(Scancode.KPad7)] = '7';
+    m[@intFromEnum(Scancode.KPad8)] = '8';
+    m[@intFromEnum(Scancode.KPad9)] = '9';
+
+    m[@intFromEnum(Scancode.KPadAsterisk)] = '*';
+    m[@intFromEnum(Scancode.KPadMinus)] = '-';
+    m[@intFromEnum(Scancode.KPadPlus)] = '+';
+    m[@intFromEnum(Scancode.KPadDot)] = '.';
+
+    break :blk m;
+};
+
+pub const Scancode = enum(u8) {
+    Unknown,
+
+    // row 1
+    Escape,
+    Digit1,
+    Digit2,
+    Digit3,
+    Digit4,
+    Digit5,
+    Digit6,
+    Digit7,
+    Digit8,
+    Digit9,
+    Digit0,
+    Minus,
+    Equal,
+    Backspace,
+    Tab,
+
+    // row 2
+    Q,
+    W,
+    E,
+    R,
+    T,
+    Y,
+    U,
+    I,
+    O,
+    P,
+    LBracket,
+    RBracket,
+    Enter,
+
+    // row 3
+    LControl,
+    A,
+    S,
+    D,
+    F,
+    G,
+    H,
+    J,
+    K,
+    L,
+    Semicolon,
+    Quote,
+    Grave,
+
+    // row 4
+    LShift,
+    Backslash,
+    Z,
+    X,
+    C,
+    V,
+    B,
+    N,
+    M,
+    Comma,
+    Dot,
+    Slash,
+    RShift,
+
+    // row 5
+    KPadAsterisk,
+    LAlt,
+    Space,
+    CapsLock,
+
+    // function keys
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+
+    // keypad navigation
+    NumLock,
+    ScrollLock,
+    KPad7,
+    KPad8,
+    KPad9,
+    KPadMinus,
+    KPad4,
+    KPad5,
+    KPad6,
+    KPadPlus,
+    KPad1,
+    KPad2,
+    KPad3,
+    KPad0,
+    KPadDot,
+
+    pub const fields = @typeInfo(Scancode).@"enum".fields.len;
+
+    /// Convert a scancode to a Modifier
+    pub fn toModifier(self: Scancode) Modifier {
+        return switch (self) {
+            .LShift, .RShift => Modifier.Shift,
+            .LControl => Modifier.Control,
+            .LAlt => Modifier.Alt,
+            .CapsLock => Modifier.CapsLock,
+            else => Modifier.None,
+        };
     }
 };
 
@@ -195,18 +539,29 @@ const KeyEvent = struct {
     /// For Set1:
     /// 0x00 - 0x7F: make codes
     /// 0x80 - 0xFF: break codes
-    code: u8,
+    code: Scancode,
     type: ScanCodeType,
     /// To keep track of the modifier keys when this event was generated.
-    status_mask: u8,
+    status_mask: u8 = Modifier.None.asU8(),
     pub fn format(value: KeyEvent, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
-        const prefix = switch (value.type) {
+        if (value.status_mask != 0) {
+            try writer.print("[ ", .{});
+            const modifiers_fields = @typeInfo(Modifier).@"enum".fields;
+            inline for (modifiers_fields) |modifier_field| {
+                const modifier: Modifier = @enumFromInt(modifier_field.value);
+                if (modifier.check(value.status_mask)) {
+                    try writer.print(" {s} ", .{modifier_field.name});
+                }
+            }
+            try writer.print(" ] ", .{});
+        }
+        const kind = switch (value.type) {
             .Make => "MAKE",
             .Break => "BREAK",
         };
-        try writer.print("{s}: 0x{x}", .{ prefix, value.code });
+        try writer.print("{s}: {s}", .{ kind, @tagName(value.code) });
     }
 };
 
@@ -215,26 +570,28 @@ const ScanCodeType = enum {
     Break,
 };
 
+// TODO: implement all of the modifiers
 const Modifier = enum(u8) {
     None = 0,
     Shift = 1 << 0,
-    Ctrl = 1 << 1,
+    Control = 1 << 1,
     Alt = 1 << 2,
     Meta = 1 << 3,
     CapsLock = 1 << 4,
-    NumLock = 1 << 5,
-    ScrollLock = 1 << 6,
     pub fn asU8(self: Modifier) u8 {
         return @intFromEnum(self);
     }
-    pub fn set(self: Modifier, flags: u8) u8 {
-        return flags | self.asU8();
+    pub fn set(self: Modifier, flags: *u8) void {
+        flags.* |= self.asU8();
+    }
+    pub fn toggle(self: Modifier, flags: *u8) void {
+        flags.* ^= self.asU8();
     }
     pub fn check(self: Modifier, flags: u8) bool {
         return flags & self.asU8() != 0;
     }
-    pub fn clear(self: Modifier, flags: u8) u8 {
-        return flags & ~self.asU8();
+    pub fn clear(self: Modifier, flags: *u8) void {
+        flags.* &= ~self.asU8();
     }
 };
 
@@ -273,14 +630,14 @@ fn keyboardUseSet(set: KeyboardSetType) void {
 
     // command to get/set the scancode set
     const command = 0xF0;
-    writeWithAck(command);
+    Port.Data.writeWithAck(command);
 
     const param: u8 = switch (set) {
         .Set1 => 0x1,
         .Set2 => 0x2,
         .Set3 => 0x3,
     };
-    writeWithAck(param);
+    Port.Data.writeWithAck(param);
 }
 
 fn getSet2KeyEvent(code: u8) KeyEvent {
@@ -304,11 +661,11 @@ fn getScancodeSetUsed() KeyboardSetType {
 
     // command to get/set the scancode set
     const command = 0xF0;
-    writeWithAck(command);
+    Port.Data.writeWithAck(command);
 
     // 0 -> get current set
     const param = 0x00;
-    writeWithAck(param);
+    Port.Data.writeWithAck(param);
 
     // since we are reading the current used set, the response will be followed by one of the below
     // values:
