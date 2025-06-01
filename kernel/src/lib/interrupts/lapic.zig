@@ -25,7 +25,7 @@ pub const LApic = struct {
         // extract the base address from the MSR (bits 12-31)
         const apic_base_phys = apic_msr & 0xfffff000;
         log.debug("Retrieved LAPIC base address: {x:0>16}", .{apic_base_phys});
-        const apic_base_virt = paging.physToVirtRaw(apic_base_phys);
+        const apic_base_virt = paging.physToVirt(apic_base_phys);
         pagingLog.info("Mapping LAPIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
             apic_base_virt,
             apic_base_virt + paging.PAGE_SIZE,

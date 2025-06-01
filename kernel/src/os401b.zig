@@ -12,6 +12,7 @@ pub const idt = @import("lib/interrupts/idt.zig");
 pub const lapic = @import("lib/interrupts/lapic.zig");
 pub const ioapic = @import("lib/interrupts/ioapic.zig");
 pub const registers = @import("lib/registers.zig");
+pub const pmm = @import("lib/memory/pmm.zig");
 pub const paging = @import("lib/memory/paging.zig");
 pub const acpi = @import("lib/acpi.zig");
 
