@@ -16,7 +16,7 @@ pub const Rsdp2Descriptor = extern struct {
     reserved: [3]u8 align(1),
     pub fn init(response: *limine.RsdpResponse) *Rsdp2Descriptor {
         // convert the address to virtual
-        const responseVirt = paging.physToVirtRaw(response.address);
+        const responseVirt = paging.physToVirt(response.address);
         const self = @as(*Rsdp2Descriptor, @ptrFromInt(responseVirt));
         if (!self.validateChecksum()) {
             @panic("RSDP validation failed");
@@ -27,7 +27,7 @@ pub const Rsdp2Descriptor = extern struct {
         if (self.xsdt_address == 0) {
             @panic("XSDT address is null");
         }
-        const xsdtVirt = paging.physToVirtRaw(self.xsdt_address);
+        const xsdtVirt = paging.physToVirt(self.xsdt_address);
         return @ptrFromInt(xsdtVirt);
     }
     fn validateChecksum(self: *Rsdp2Descriptor) bool {
@@ -60,7 +60,7 @@ pub const Xsdt = extern struct {
             log.err("XSDT entry index {d} out of range", .{n});
             return null;
         }
-        const entry_virt = paging.physToVirtRaw(entries[n]);
+        const entry_virt = paging.physToVirt(entries[n]);
         const hdr: *AcpiSdtHeader = @ptrFromInt(entry_virt);
         log.debug("Retrieving XSDT entry at index {d} with signature {s}", .{ n, hdr.signature });
         return hdr;
@@ -71,7 +71,7 @@ pub const Xsdt = extern struct {
         log.info("Searching XSDT for signature {s}", .{signature});
         for (0.., entries) |i, entry_addr| {
             log.debug("Examining entry {d} at phys 0x{x:0>16}", .{ i, entry_addr });
-            const entry_virt = paging.physToVirtRaw(entry_addr);
+            const entry_virt = paging.physToVirt(entry_addr);
             const entry: *AcpiSdtHeader = @ptrFromInt(entry_virt);
             if (std.mem.eql(u8, &entry.signature, signature)) {
                 log.info("Found signature {s} at index {d}", .{ signature, i });

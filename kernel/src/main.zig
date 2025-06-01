@@ -14,6 +14,7 @@ const lapic_timer = lib.lapic_timer;
 const tsc = lib.tsc;
 const ps2 = lib.ps2;
 const registers = lib.registers;
+const pmm = lib.pmm;
 const paging = lib.paging;
 const acpi = lib.acpi;
 
@@ -108,6 +109,11 @@ fn init() Error!void {
     const hhdm_response = lib.hhdm_request.response orelse @panic("failed to get HHDM offset from Limine");
     const hhdm_offset = hhdm_response.offset;
     const executable_address_response = lib.executable_address_request.response orelse @panic("failed to get executable address response from Limine");
+
+    try term.logStepBegin("Setting up physical memory manager", .{});
+    pmm.init(memmap, executable_address_response);
+    try term.logStepEnd(true);
+
     try term.logStepBegin("Setting up new page tables", .{});
     paging.init(memmap, executable_address_response, hhdm_offset);
     try term.logStepEnd(true);

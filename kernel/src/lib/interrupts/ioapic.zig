@@ -33,7 +33,7 @@ pub const IoApic = struct {
     pub fn init(entry: acpi.MadtEntry) IoApic {
         const ioapic_base_phys = entry.IoApic.address;
         log.debug("Retrieved I/O APIC base address: {x:0>16}", .{ioapic_base_phys});
-        const ioapic_base_virt = paging.physToVirtRaw(entry.IoApic.address);
+        const ioapic_base_virt = paging.physToVirt(entry.IoApic.address);
         pagingLog.info("Mapping I/O APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
             ioapic_base_virt,
             ioapic_base_virt + paging.PAGE_SIZE,
