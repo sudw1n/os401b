@@ -93,7 +93,11 @@ pub const Ps2Driver = struct {
             else => {
                 const raw: u8 = @intFromEnum(event.code);
                 if (raw < set1_ascii_map.len and set1_ascii_map[raw] != 0) {
-                    break :blk set1_ascii_map[raw];
+                    const c = set1_ascii_map[raw];
+                    if (Modifier.CapsLock.check(event.status_mask) or Modifier.Shift.check(event.status_mask)) {
+                        break :blk std.ascii.toUpper(c);
+                    }
+                    break :blk c;
                 }
                 break :blk null;
             },
@@ -260,32 +264,32 @@ const set1_ascii_map: [Scancode.fields]u8 = blk: {
     m[@intFromEnum(Scancode.Digit8)] = '8';
     m[@intFromEnum(Scancode.Digit9)] = '9';
 
-    m[@intFromEnum(Scancode.A)] = 'A';
-    m[@intFromEnum(Scancode.B)] = 'B';
-    m[@intFromEnum(Scancode.C)] = 'C';
-    m[@intFromEnum(Scancode.D)] = 'D';
-    m[@intFromEnum(Scancode.E)] = 'E';
-    m[@intFromEnum(Scancode.F)] = 'F';
-    m[@intFromEnum(Scancode.G)] = 'G';
-    m[@intFromEnum(Scancode.H)] = 'H';
-    m[@intFromEnum(Scancode.I)] = 'I';
-    m[@intFromEnum(Scancode.J)] = 'J';
-    m[@intFromEnum(Scancode.K)] = 'K';
-    m[@intFromEnum(Scancode.L)] = 'L';
-    m[@intFromEnum(Scancode.M)] = 'M';
-    m[@intFromEnum(Scancode.N)] = 'N';
-    m[@intFromEnum(Scancode.O)] = 'O';
-    m[@intFromEnum(Scancode.P)] = 'P';
-    m[@intFromEnum(Scancode.Q)] = 'Q';
-    m[@intFromEnum(Scancode.R)] = 'R';
-    m[@intFromEnum(Scancode.S)] = 'S';
-    m[@intFromEnum(Scancode.T)] = 'T';
-    m[@intFromEnum(Scancode.U)] = 'U';
-    m[@intFromEnum(Scancode.V)] = 'V';
-    m[@intFromEnum(Scancode.W)] = 'W';
-    m[@intFromEnum(Scancode.X)] = 'X';
-    m[@intFromEnum(Scancode.Y)] = 'Y';
-    m[@intFromEnum(Scancode.Z)] = 'Z';
+    m[@intFromEnum(Scancode.A)] = 'a';
+    m[@intFromEnum(Scancode.B)] = 'b';
+    m[@intFromEnum(Scancode.C)] = 'c';
+    m[@intFromEnum(Scancode.D)] = 'd';
+    m[@intFromEnum(Scancode.E)] = 'e';
+    m[@intFromEnum(Scancode.F)] = 'f';
+    m[@intFromEnum(Scancode.G)] = 'g';
+    m[@intFromEnum(Scancode.H)] = 'h';
+    m[@intFromEnum(Scancode.I)] = 'i';
+    m[@intFromEnum(Scancode.J)] = 'j';
+    m[@intFromEnum(Scancode.K)] = 'k';
+    m[@intFromEnum(Scancode.L)] = 'l';
+    m[@intFromEnum(Scancode.M)] = 'm';
+    m[@intFromEnum(Scancode.N)] = 'n';
+    m[@intFromEnum(Scancode.O)] = 'o';
+    m[@intFromEnum(Scancode.P)] = 'p';
+    m[@intFromEnum(Scancode.Q)] = 'q';
+    m[@intFromEnum(Scancode.R)] = 'r';
+    m[@intFromEnum(Scancode.S)] = 's';
+    m[@intFromEnum(Scancode.T)] = 't';
+    m[@intFromEnum(Scancode.U)] = 'u';
+    m[@intFromEnum(Scancode.V)] = 'v';
+    m[@intFromEnum(Scancode.W)] = 'w';
+    m[@intFromEnum(Scancode.X)] = 'x';
+    m[@intFromEnum(Scancode.Y)] = 'y';
+    m[@intFromEnum(Scancode.Z)] = 'z';
 
     m[@intFromEnum(Scancode.Minus)] = '-';
     m[@intFromEnum(Scancode.Equal)] = '=';
