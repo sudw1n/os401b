@@ -111,7 +111,7 @@ pub const PageTableEntryFlags = enum(u64) {
     /// Forbid code execution from the mapped frame.
     NoExecute = 1 << 63,
 
-    pub fn asU64(self: PageTableEntryFlags) u64 {
+    pub fn asInt(self: PageTableEntryFlags) u64 {
         return @intFromEnum(self);
     }
 };
@@ -130,26 +130,26 @@ pub const PageTableEntry = packed struct {
         // Mask the frame address to bits 12–51 (assuming a 4KiB page alignment)
         var entry: u64 = frame_address & bit_12_51_mask;
         for (flags) |flag| {
-            entry |= flag.asU64();
+            entry |= flag.asInt();
         }
         return PageTableEntry{ .entry = entry };
     }
 
     pub fn checkFlag(self: PageTableEntry, flag: PageTableEntryFlags) bool {
-        return (self.entry & flag.asU64()) != 0;
+        return (self.entry & flag.asInt()) != 0;
     }
 
     /// Sets (ORs in) the given flags.
     pub fn setFlags(self: *PageTableEntry, flags: []const PageTableEntryFlags) void {
         for (flags) |flag| {
-            self.entry |= flag.asU64();
+            self.entry |= flag.asInt();
         }
     }
 
     /// Clears (removes) the given flags.
     pub fn clearFlags(self: *PageTableEntry, flags: []const PageTableEntryFlags) void {
         for (flags) |flag| {
-            self.entry &= ~(flag.asU64());
+            self.entry &= ~(flag.asInt());
         }
     }
 
@@ -372,3 +372,43 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
 inline fn getPml4() *PML4 {
     return @ptrFromInt(physToVirt(registers.Cr3.get()));
 }
+
+// TODO: build a virtual memory manager built around this paging system, which tracks the pages that
+// have been allocated along with their flags
+// The PMM should also hand out frame addresses, instead of having the alloc()/dealloc() interface.
+// move over that interface here.
+
+const VmObject = struct {
+    ptr: []u8,
+    flags: u64,
+    next: ?*VmObject,
+
+    /// convert the VM object flags to x86_64 page table flags
+    fn convertVmFlags(self: *VmObject) u64 {
+        var value: u64 = 0;
+        const flags = self.flags;
+        if (VmObjectFlags.Write.check(flags)) {
+            value |= PageTableEntryFlags.Writable.asInt();
+        }
+        if (VmObjectFlags.User.check(flags)) {
+            value |= PageTableEntryFlags.UserAccessible.asInt();
+        }
+        if (!VmObjectFlags.Exec.check(flags)) {
+            value |= PageTableEntryFlags.NoExecute.asInt();
+        }
+        return value;
+    }
+};
+
+const VmObjectFlags = enum(u64) {
+    None = 0,
+    Write = 1 << 0,
+    Exec = 1 << 1,
+    User = 1 << 2,
+    pub fn asInt(self: VmObjectFlags) u64 {
+        return @intFromEnum(self);
+    }
+    pub fn check(self: VmObjectFlags, flags: u64) bool {
+        return flags & self.asInt() != 0;
+    }
+};
