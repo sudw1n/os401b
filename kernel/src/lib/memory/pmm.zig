@@ -148,28 +148,10 @@ pub const PhysicalMemoryManager = struct {
         const ptr: [*]u8 = @ptrFromInt(addr);
         return ptr[0..bytes_needed];
     }
-    // find a contiguous range of pages
-    fn findContiguous(self: *PhysicalMemoryManager, pages_needed: u64) u64 {
-        var candidate: u64 = 0;
-        // ensure candidate plus pages_needed is within bounds
-        while (candidate <= TOTAL_PAGES - pages_needed) {
-            var i: u64 = 0;
-            // check if all pages in the block starting at candidate are free
-            while (i < pages_needed) : (i += 1) {
-                if (!self.free_bitmap.isSet(candidate + i)) {
-                    // if page candidate + i is reserved, then we need to restart past that index
-                    candidate = candidate + i + 1;
-                    break;
-                }
-            }
-            if (i == pages_needed) return candidate;
-        }
-        @panic("Out of memory: contiguous block not found");
-    }
     /// Deallocate the given physical page address.
     ///
-    /// Returns false if the page is already free (double-free).
-    pub fn free(self: *PhysicalMemoryManager, bytes: []u8) !void {
+    /// Returns Error if the page is already free (double-free).
+    pub fn free(self: *PhysicalMemoryManager, bytes: []u8) Error!void {
         const size = bytes.len;
         const pages = addressToPage(size);
         const address = @intFromPtr(bytes.ptr);
@@ -196,5 +178,23 @@ pub const PhysicalMemoryManager = struct {
     fn isFree(self: *PhysicalMemoryManager, address: u64) bool {
         const page = addressToPage(address);
         return self.free_bitmap.isSet(page);
+    }
+    // find a contiguous range of pages
+    fn findContiguous(self: *PhysicalMemoryManager, pages_needed: u64) u64 {
+        var candidate: u64 = 0;
+        // ensure candidate plus pages_needed is within bounds
+        while (candidate <= TOTAL_PAGES - pages_needed) {
+            var i: u64 = 0;
+            // check if all pages in the block starting at candidate are free
+            while (i < pages_needed) : (i += 1) {
+                if (!self.free_bitmap.isSet(candidate + i)) {
+                    // if page candidate + i is reserved, then we need to restart past that index
+                    candidate = candidate + i + 1;
+                    break;
+                }
+            }
+            if (i == pages_needed) return candidate;
+        }
+        @panic("Out of memory: contiguous block not found");
     }
 };
