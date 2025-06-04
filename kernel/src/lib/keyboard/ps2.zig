@@ -37,7 +37,7 @@ pub const Ps2Driver = struct {
     /// To handle multi-byte scancodes, we implement a simple state machine.
     /// This holds the current state of the state machine.
     current_state: State,
-    current_modifiers: u8 = Modifier.None.asU8(),
+    current_modifiers: u8 = Modifier.None.asInt(),
 
     const State = enum {
         /// The normal state, where we expect to receive a single byte
@@ -546,7 +546,7 @@ const KeyEvent = struct {
     code: Scancode,
     type: ScanCodeType,
     /// To keep track of the modifier keys when this event was generated.
-    status_mask: u8 = Modifier.None.asU8(),
+    status_mask: u8 = Modifier.None.asInt(),
     pub fn format(value: KeyEvent, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
@@ -582,20 +582,20 @@ const Modifier = enum(u8) {
     Alt = 1 << 2,
     Meta = 1 << 3,
     CapsLock = 1 << 4,
-    pub fn asU8(self: Modifier) u8 {
+    pub fn asInt(self: Modifier) u8 {
         return @intFromEnum(self);
     }
     pub fn set(self: Modifier, flags: *u8) void {
-        flags.* |= self.asU8();
+        flags.* |= self.asInt();
     }
     pub fn toggle(self: Modifier, flags: *u8) void {
-        flags.* ^= self.asU8();
+        flags.* ^= self.asInt();
     }
     pub fn check(self: Modifier, flags: u8) bool {
-        return flags & self.asU8() != 0;
+        return flags & self.asInt() != 0;
     }
     pub fn clear(self: Modifier, flags: *u8) void {
-        flags.* &= ~self.asU8();
+        flags.* &= ~self.asInt();
     }
 };
 
