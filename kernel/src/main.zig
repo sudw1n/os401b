@@ -17,6 +17,7 @@ const registers = lib.registers;
 const pmm = lib.pmm;
 const paging = lib.paging;
 const acpi = lib.acpi;
+const heap = lib.heap;
 
 const Error = lib.Error;
 
@@ -134,6 +135,17 @@ fn init() Error!void {
 
     try term.logStepBegin("Unmasking IRQ lines", .{});
     ioapic.routeVectors();
+    try term.logStepEnd(true);
+
+    try term.logStepBegin("Initializing the heap", .{});
+    heap.init(0x21000);
+
+    var allocator = lib.heap.allocator;
+    log.debug("here", .{});
+    const val1 = allocator.create(u64) catch unreachable;
+    allocator.destroy(val1);
+    const val2 = allocator.create(u64) catch unreachable;
+    std.log.debug("val1 = {any}, val2 = {any}", .{ val1, val2 });
     try term.logStepEnd(true);
 }
 
