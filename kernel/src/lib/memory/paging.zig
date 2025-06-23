@@ -9,9 +9,9 @@ const Range = std.bit_set.Range;
 
 pub const PAGE_SIZE = build_options.page_size;
 pub const TOTAL_PAGES = blk: {
-    const memoryMiB = build_options.memory;
-    const totalBytes = memoryMiB * 1024 * 1024;
-    break :blk totalBytes / PAGE_SIZE;
+    const memory_mib = build_options.memory;
+    const total_bytes = memory_mib * 1024 * 1024;
+    break :blk total_bytes / PAGE_SIZE;
 };
 
 /// For clarity, alias the PageTable type for each level of the paging hierarchy.
@@ -21,57 +21,7 @@ pub const PDPT = PageTable;
 pub const PageDirectory = PageTable;
 pub const PT = PageTable;
 
-extern const __kernel_start: u8;
-extern const __kernel_end: u8;
-extern const __limine_requests_start: u8;
-extern const __limine_requests_end: u8;
-extern const __kernel_code_start: u8;
-extern const __kernel_code_end: u8;
-extern const __kernel_rodata_start: u8;
-extern const __kernel_rodata_end: u8;
-extern const __kernel_data_start: u8;
-extern const __kernel_data_end: u8;
-extern const __kernel_bss_start: u8;
-extern const __kernel_bss_end: u8;
-// stack grows downward
-extern const __kernel_stack_top: u8;
-extern const __kernel_stack_bottom: u8;
-
-var HHDM_OFFSET: u64 = 0;
-var pml4: *PML4 = undefined;
-
-pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse, hhdm_offset: u64) void {
-    HHDM_OFFSET = hhdm_offset;
-
-    pml4 = PML4.initZero();
-    log.debug("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pml4)});
-
-    // map physical frames
-    const entries = memory_map.getEntries();
-    for (entries) |entry| {
-        const base = entry.base;
-        const length = entry.length;
-        const virt_addr = physToVirt(base);
-        const flags: []const PageTableEntryFlags = switch (entry.type) {
-            .usable, .bootloader_reclaimable, .executable_and_modules => &.{ .Present, .Writable },
-            .framebuffer, .acpi_reclaimable, .acpi_nvs => &.{ .Present, .Writable, .WriteThrough, .NoCache },
-            else => {
-                log.debug("Skipping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
-                continue;
-            },
-        };
-        log.info("Mapping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
-        mapRange(virt_addr, base, length, flags);
-    }
-
-    mapOwn(executable_address_response);
-
-    // load the new page table base
-    const cr3_val = virtToPhys(@intFromPtr(pml4));
-    log.debug("Reloading CR3 with value: {x:0>16}", .{cr3_val});
-    registers.Cr3.set(cr3_val);
-}
-
+const HHDM_OFFSET = build_options.hhdm_offset;
 /// 64-bit flags for a page table entry.
 pub const PageTableEntryFlags = enum(u64) {
     /// Specifies whether the mapped frame or page table is loaded in memory.
@@ -185,14 +135,23 @@ pub const PageTable = struct {
         return table;
     }
     pub fn deinit(self: *PageTable) void {
+        // we need to give the physical address of ourselves to the PMM
+        const phys_ptr: [*]u8 = @ptrFromInt(virtToPhys(@intFromPtr(self)));
         // Deallocate the page table.
-        const ptr = @as([*]u8, @ptrCast(self));
         const len = @sizeOf(PageTable);
-        pmm.global_pmm.free(ptr[0..len]);
+        pmm.global_pmm.free(phys_ptr[0..len]);
+    }
+    pub fn isEmpty(self: *PageTable) bool {
+        // Check if all entries are zero (not mapped).
+        for (self.entries) |entry| {
+            if (entry.checkFlag(.Present)) return false;
+        }
+        return true;
     }
 };
 
 pub fn mapRange(
+    pml4: *PML4,
     virt_addr: u64,
     phys_addr: u64,
     length: u64,
@@ -201,11 +160,19 @@ pub fn mapRange(
     const pages: u64 = addressToPage(length);
     for (0..pages) |i| {
         const offset = pageToAddress(i);
-        mapPage(virt_addr + offset, phys_addr + offset, flags);
+        mapPage(pml4, virt_addr + offset, phys_addr + offset, flags);
     }
 }
 
-pub fn mapPage(virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
+pub fn unmapRange(pml4: *PML4, virt_addr: u64, length: u64) void {
+    const pages: u64 = addressToPage(length);
+    for (0..pages) |i| {
+        const offset = pageToAddress(i);
+        unmapPage(pml4, virt_addr + offset);
+    }
+}
+
+pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
     const virt_addr = pageFloor(virt);
     const phys_addr = pageFloor(phys);
 
@@ -269,14 +236,83 @@ pub fn mapPage(virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
     log.debug("Page mapped: virt {x:0>16} -> phys {x:0>16} (PML4[{d}], PDPT[{d}], PD[{d}], PT[{d}])", .{ virt_addr, phys_addr, pml4_index, pdpt_index, pd_index, pt_index });
 }
 
-// Return virtual address (at HHDM offset).
-// `address`: a physical address
-pub fn virtToPhys(address: u64) u64 {
-    return address - HHDM_OFFSET;
+pub fn unmapPage(pml4: *PML4, virt_addr: u64) void {
+    log.debug("Ummapping page: virt {x:0>16}", .{virt_addr});
+    const pml4_index = (virt_addr >> 39) & 0x1FF;
+    const pdpt_index = (virt_addr >> 30) & 0x1FF;
+    const pd_index = (virt_addr >> 21) & 0x1FF;
+    const pt_index = (virt_addr >> 12) & 0x1FF;
+
+    const pml4_entry = &pml4.entries[pml4_index];
+    log.debug("Inspecting PML4 Entry at index {d}: {x:0>16}", .{ pml4_index, pml4_entry.getFrameAddress() });
+    if (!pml4_entry.checkFlag(.Present)) {
+        log.warn("  PML4 Entry not present. Nothing to unmap.", .{});
+        return;
+    }
+
+    const pdpt: *PDPT = @ptrFromInt(physToVirt(pml4_entry.getFrameAddress()));
+    const pdpt_entry = &pdpt.entries[pdpt_index];
+    log.debug("Inspecting PDPT Entry at index {d}: {x:0>16}", .{ pdpt_index, pdpt_entry.getFrameAddress() });
+    if (!pdpt_entry.checkFlag(.Present)) {
+        log.warn("  PDPT Entry not present. Nothing to unmap.", .{});
+        return;
+    }
+
+    const pd: *PageDirectory = @ptrFromInt(physToVirt(pdpt_entry.getFrameAddress()));
+    const pd_entry = &pd.entries[pd_index];
+    log.debug("Inspecting PD Entry at index {d}: {x:0>16}", .{ pd_index, pd_entry.getFrameAddress() });
+    if (!pd_entry.checkFlag(.Present)) {
+        log.warn("  PD Entry not present. Nothing to unmap.", .{});
+        return;
+    }
+
+    const pt: *PageTable = @ptrFromInt(physToVirt(pd_entry.getFrameAddress()));
+    const pt_entry = &pt.entries[pt_index];
+    log.debug("Unmapping the physical address {x:0>16} from PT at index {d}.", .{ pt_entry.getFrameAddress(), pt_index });
+    pt_entry.clearFlags(&.{.Present});
+    pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pt_entry.getFrameAddress()))[0..PAGE_SIZE]);
+
+    // also invalidate the TLB entry for this page
+    asm volatile (
+        \\ invlpg %[page]
+        :
+        : [page] "r" (virt_addr),
+        : "memory"
+    );
+
+    // now check if the page tables are also empty, recursively
+
+    // cleanup PT
+    if (pt.isEmpty()) {
+        log.debug("PT at index {d} is empty. Deallocating.", .{pt_index});
+        pt.deinit();
+        pd_entry.clearFlags(&.{.Present});
+        pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pd_entry.getFrameAddress()))[0..PAGE_SIZE]);
+
+        if (pd.isEmpty()) {
+            log.debug("PD at index {d} is empty. Deallocating.", .{pd_index});
+            pd.deinit();
+            pdpt_entry.clearFlags(&.{.Present});
+            pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pdpt_entry.getFrameAddress()))[0..PAGE_SIZE]);
+
+            if (pdpt.isEmpty()) {
+                log.debug("PDPT at index {d} is empty. Deallocating.", .{pdpt_index});
+                pdpt.deinit();
+                pml4_entry.clearFlags(&.{.Present});
+                pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pml4_entry.getFrameAddress()))[0..PAGE_SIZE]);
+            }
+        }
+    }
 }
 
 // Return physical address (at HHDM offset).
 // `address`: a virtual address
+pub fn virtToPhys(address: u64) u64 {
+    return address - HHDM_OFFSET;
+}
+
+// Return virtual address (at HHDM offset).
+// `address`: a physical address
 pub fn physToVirt(address: u64) u64 {
     return HHDM_OFFSET + address;
 }
@@ -295,78 +331,6 @@ pub fn pageFloor(addr: u64) u64 {
 
 pub fn pageCeil(addr: u64) u64 {
     return std.mem.alignForward(u64, addr, PAGE_SIZE);
-}
-
-// map own stack and code regions
-fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
-    const vbase = executable_address_response.virtual_base;
-    const pbase = executable_address_response.physical_base;
-
-    // The regions of the kernel with appropriate permissions for page table setup
-    const kernel_regions = &[_]struct {
-        name: [:0]const u8,
-        start: u64,
-        end: u64,
-        flags: []const PageTableEntryFlags,
-    }{
-        // .limine_requests: R, read‑only, non-executable
-        .{
-            .name = "limine_requests",
-            .start = @intFromPtr(&__limine_requests_start),
-            .end = @intFromPtr(&__limine_requests_end),
-            .flags = &.{ .Present, .NoExecute },
-        },
-        // .text: RX, read‑only, executable
-        .{
-            .name = "text",
-            .start = @intFromPtr(&__kernel_code_start),
-            .end = @intFromPtr(&__kernel_code_end),
-            .flags = &.{.Present},
-        },
-
-        // .rodata: R‑only, non‑executable
-        .{
-            .name = "rodata",
-            .start = @intFromPtr(&__kernel_rodata_start),
-            .end = @intFromPtr(&__kernel_rodata_end),
-            .flags = &.{ .Present, .NoExecute },
-        },
-
-        // .data: RW, non‑executable
-        .{
-            .name = "data",
-            .start = @intFromPtr(&__kernel_data_start),
-            .end = @intFromPtr(&__kernel_data_end),
-            .flags = &.{ .Present, .Writable, .NoExecute },
-        },
-
-        // .bss: RW, non‑executable
-        .{
-            .name = "bss",
-            .start = @intFromPtr(&__kernel_bss_start),
-            .end = @intFromPtr(&__kernel_bss_end),
-            .flags = &.{ .Present, .Writable, .NoExecute },
-        },
-
-        // stack: RW, non‑executable (grows down from top)
-        .{
-            .name = "stack",
-            .start = @intFromPtr(&__kernel_stack_bottom),
-            .end = @intFromPtr(&__kernel_stack_top),
-            .flags = &.{ .Present, .Writable, .NoExecute },
-        },
-    };
-
-    for (kernel_regions) |reg| {
-        const virt = reg.start;
-        const length = reg.end - reg.start;
-        const offset = virt - vbase; // how far into the kernel base is this pointer
-        const phys = pbase + offset; // location in RAM for that offset
-
-        log.info("Mapping {s} region virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ reg.name, virt, virt + length, phys });
-
-        mapRange(virt, phys, length, reg.flags);
-    }
 }
 
 inline fn getPml4() *PML4 {
