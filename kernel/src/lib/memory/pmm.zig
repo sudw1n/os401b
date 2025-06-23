@@ -64,6 +64,10 @@ pub const PhysicalMemoryManager = struct {
             // we mark every usable
             if (entry.type == .usable) {
                 // but let's exclude the NULL (0x0000 - 0x1000) page i.e. the first page
+
+                // note: this was included because in later code, we cast pointers. If we allow the
+                // PMM to return back the address of the NULL page, it will essentially return a
+                // NULL pointer and Zig does not like that.
                 const base = if (entry.base == 0) entry.base + 0x1000 else entry.base;
                 const length = if (entry.base == 0) entry.length - 0x1000 else entry.length;
 
