@@ -274,7 +274,7 @@ pub fn unmapPage(pml4: *PML4, virt_addr: u64) void {
 
     // also invalidate the TLB entry for this page
     asm volatile (
-        \\ invlpg %[page]
+        \\ invlpg (%[page])
         :
         : [page] "r" (virt_addr),
         : "memory"
