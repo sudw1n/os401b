@@ -18,3 +18,14 @@ pub fn init() void {
     std.log.debug("Heap initialized at virtual address: {x:0>16}, size: {d}", .{ @intFromPtr(heap.ptr), heap.len });
     fba = std.heap.FixedBufferAllocator.init(heap);
 }
+
+pub fn deinit(pml4: *paging.PML4) void {
+    // Free the physical frame used for the heap
+    const heap_buffer = fba.?.buffer;
+    paging.unmapRange(pml4, @intFromPtr(heap_buffer.ptr), heap_buffer.len);
+    fba = null;
+}
+
+pub fn allocator() std.mem.Allocator {
+    return (fba orelse @panic("Heap not initialized")).allocator();
+}
