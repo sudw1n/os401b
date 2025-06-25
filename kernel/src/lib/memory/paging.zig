@@ -95,10 +95,7 @@ pub const PageTableEntry = packed struct {
     /// The frame address is masked to ensure only the proper bits are set.
     pub fn init(frame_address: u64, flags: []const PageTableEntryFlag) PageTableEntry {
         // Mask the frame address to bits 12–51 (assuming a 4KiB page alignment)
-        var entry: u64 = frame_address & bit_12_51_mask;
-        for (flags) |flag| {
-            entry |= flag.asInt();
-        }
+        const entry: u64 = (frame_address & bit_12_51_mask) | (PageTableEntryFlag.asRaw(flags) & ~bit_12_51_mask);
         return PageTableEntry{ .entry = entry };
     }
 
