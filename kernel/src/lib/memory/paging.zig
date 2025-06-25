@@ -64,6 +64,14 @@ pub const PageTableEntryFlag = enum(u64) {
     pub fn asInt(self: PageTableEntryFlag) u64 {
         return @intFromEnum(self);
     }
+    /// convert the given slice of PageTableEntryFlag to a single u64 value
+    pub fn asRaw(slice: []const PageTableEntryFlag) u64 {
+        var value: u64 = 0;
+        for (slice) |flag| {
+            value |= flag.asInt();
+        }
+        return value;
+    }
 };
 
 /// A single 64-bit page table entry.
