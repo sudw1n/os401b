@@ -23,7 +23,7 @@ pub const PT = PageTable;
 
 const HHDM_OFFSET = build_options.hhdm_offset;
 /// 64-bit flags for a page table entry.
-pub const PageTableEntryFlags = enum(u64) {
+pub const PageTableEntryFlag = enum(u64) {
     /// Specifies whether the mapped frame or page table is loaded in memory.
     Present = 1 << 0,
     /// Controls whether writes to the mapped frame are allowed.
@@ -61,7 +61,7 @@ pub const PageTableEntryFlags = enum(u64) {
     /// Forbid code execution from the mapped frame.
     NoExecute = 1 << 63,
 
-    pub fn asInt(self: PageTableEntryFlags) u64 {
+    pub fn asInt(self: PageTableEntryFlag) u64 {
         return @intFromEnum(self);
     }
 };
@@ -76,7 +76,7 @@ pub const PageTableEntry = packed struct {
 
     /// Initializes a page table entry with the given physical frame address and flags.
     /// The frame address is masked to ensure only the proper bits are set.
-    pub fn init(frame_address: u64, flags: []const PageTableEntryFlags) PageTableEntry {
+    pub fn init(frame_address: u64, flags: []const PageTableEntryFlag) PageTableEntry {
         // Mask the frame address to bits 12–51 (assuming a 4KiB page alignment)
         var entry: u64 = frame_address & bit_12_51_mask;
         for (flags) |flag| {
@@ -85,19 +85,19 @@ pub const PageTableEntry = packed struct {
         return PageTableEntry{ .entry = entry };
     }
 
-    pub fn checkFlag(self: PageTableEntry, flag: PageTableEntryFlags) bool {
+    pub fn checkFlag(self: PageTableEntry, flag: PageTableEntryFlag) bool {
         return (self.entry & flag.asInt()) != 0;
     }
 
     /// Sets (ORs in) the given flags.
-    pub fn setFlags(self: *PageTableEntry, flags: []const PageTableEntryFlags) void {
+    pub fn setFlags(self: *PageTableEntry, flags: []const PageTableEntryFlag) void {
         for (flags) |flag| {
             self.entry |= flag.asInt();
         }
     }
 
     /// Clears (removes) the given flags.
-    pub fn clearFlags(self: *PageTableEntry, flags: []const PageTableEntryFlags) void {
+    pub fn clearFlags(self: *PageTableEntry, flags: []const PageTableEntryFlag) void {
         for (flags) |flag| {
             self.entry &= ~(flag.asInt());
         }
