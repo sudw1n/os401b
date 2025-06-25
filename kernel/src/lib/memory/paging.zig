@@ -187,7 +187,7 @@ pub fn mapRange(
     virt_addr: u64,
     phys_addr: u64,
     length: u64,
-    flags: []const PageTableEntryFlags,
+    flags: u64,
 ) void {
     const pages: u64 = addressToPage(length);
     for (0..pages) |i| {
@@ -204,7 +204,7 @@ pub fn unmapRange(pml4: *PML4, virt_addr: u64, length: u64) void {
     }
 }
 
-pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: []const PageTableEntryFlags) void {
+pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: u64) void {
     const virt_addr = pageFloor(virt);
     const phys_addr = pageFloor(phys);
 
@@ -264,7 +264,7 @@ pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: []const PageTableEntryF
 
     // write the mapping into the page table
     log.debug("Mapping the physical address into PT at index {d}.", .{pt_index});
-    pt.entries[pt_index] = PageTableEntry.init(phys_addr, flags);
+    pt.entries[pt_index] = PageTableEntry.initRaw(phys_addr, flags);
     log.debug("Page mapped: virt {x:0>16} -> phys {x:0>16} (PML4[{d}], PDPT[{d}], PD[{d}], PT[{d}])", .{ virt_addr, phys_addr, pml4_index, pdpt_index, pd_index, pt_index });
 }
 
