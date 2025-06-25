@@ -167,6 +167,21 @@ pub const PageTable = struct {
     }
 };
 
+pub fn switchToPML4(pml4: *PML4) void {
+    const virt_addr = @intFromPtr(pml4);
+    // Switch to the new PML4 by writing its physical address to CR3.
+    const phys_addr = virtToPhys(virt_addr);
+    log.debug("Switching to PML4 at physical address {x:0>16}", .{phys_addr});
+    registers.Cr3.set(phys_addr);
+    // Invalidate the TLB cache.
+    asm volatile (
+        \\ invlpg (%[page])
+        :
+        : [page] "r" (virt_addr),
+        : "memory"
+    );
+}
+
 pub fn mapRange(
     pml4: *PML4,
     virt_addr: u64,
