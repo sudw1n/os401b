@@ -16,8 +16,7 @@ pub const Rsdp2Descriptor = extern struct {
     reserved: [3]u8 align(1),
     pub fn init(response: *limine.RsdpResponse) *Rsdp2Descriptor {
         // convert the address to virtual
-        const responseVirt = paging.physToVirt(response.address);
-        const self = @as(*Rsdp2Descriptor, @ptrFromInt(responseVirt));
+        const self: *Rsdp2Descriptor = @ptrFromInt(paging.physToVirt(response.address));
         if (!self.validateChecksum()) {
             @panic("RSDP validation failed");
         }
@@ -27,8 +26,7 @@ pub const Rsdp2Descriptor = extern struct {
         if (self.xsdt_address == 0) {
             @panic("XSDT address is null");
         }
-        const xsdtVirt = paging.physToVirt(self.xsdt_address);
-        return @ptrFromInt(xsdtVirt);
+        return @ptrFromInt(paging.physToVirt(self.xsdt_address));
     }
     fn validateChecksum(self: *Rsdp2Descriptor) bool {
         var sum: u8 = 0;
@@ -60,8 +58,8 @@ pub const Xsdt = extern struct {
             log.err("XSDT entry index {d} out of range", .{n});
             return null;
         }
-        const entry_virt = paging.physToVirt(entries[n]);
-        const hdr: *AcpiSdtHeader = @ptrFromInt(entry_virt);
+        const entry = entries[n];
+        const hdr: *AcpiSdtHeader = @ptrFromInt(paging.physToVirt(entry));
         log.debug("Retrieving XSDT entry at index {d} with signature {s}", .{ n, hdr.signature });
         return hdr;
     }
@@ -71,8 +69,7 @@ pub const Xsdt = extern struct {
         log.info("Searching XSDT for signature {s}", .{signature});
         for (0.., entries) |i, entry_addr| {
             log.debug("Examining entry {d} at phys 0x{x:0>16}", .{ i, entry_addr });
-            const entry_virt = paging.physToVirt(entry_addr);
-            const entry: *AcpiSdtHeader = @ptrFromInt(entry_virt);
+            const entry: *AcpiSdtHeader = @ptrFromInt(paging.physToVirt(entry_addr));
             if (std.mem.eql(u8, &entry.signature, signature)) {
                 log.info("Found signature {s} at index {d}", .{ signature, i });
                 return entry;
