@@ -17,7 +17,7 @@ const ps2 = lib.ps2;
 const registers = lib.registers;
 const pmm = lib.pmm;
 const paging = lib.paging;
-const heap = lib.heap;
+const vmm_heap = lib.vmm_heap;
 const vmm = lib.vmm;
 const acpi = lib.acpi;
 
@@ -33,7 +33,7 @@ pub const std_options = std.Options{
     .log_scope_levels = &.{
         .{
             .scope = .pmm,
-            .level = .debug,
+            .level = .info,
         },
         .{
             .scope = .paging,
@@ -41,7 +41,7 @@ pub const std_options = std.Options{
         },
         .{
             .scope = .vmm,
-            .level = .debug,
+            .level = .info,
         },
         .{
             .scope = .lapic,
@@ -53,7 +53,7 @@ pub const std_options = std.Options{
         },
         .{
             .scope = .idt,
-            .level = .debug,
+            .level = .info,
         },
     },
     .logFn = serial.log,
@@ -123,11 +123,8 @@ fn init() Error!void {
     pmm.init(memmap, executable_address_response);
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Setting up ", .{});
-    heap.init();
-    try term.logStepEnd(true);
-
     try term.logStepBegin("Setting up virtual memory manager and kernel page tables", .{});
+    vmm_heap.init();
     vmm.init(memmap, executable_address_response);
     try term.logStepEnd(true);
 
