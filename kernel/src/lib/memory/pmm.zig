@@ -40,6 +40,9 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     log.info("Physical memory manager initialized", .{});
 }
 
+/// The physical memory manager (PMM) is responsible for managing physical memory pages.
+///
+/// There should be only one instance of this manager in the system.
 pub const PhysicalMemoryManager = struct {
     pub const Error = error{
         DoubleFree,
@@ -125,12 +128,13 @@ pub const PhysicalMemoryManager = struct {
             const initial_count = bitmap.count();
             bitmap.setRangeValue(.{ .start = phys_start_page, .end = phys_end_page }, false);
             const final_count = bitmap.count();
-            // if there were more pages free than now
+            // check if there were more pages free than now
             if (initial_count > final_count) {
-                // it's likely that we've already reserved those pages
+                // it's unlikely that we've reserved any new pages because the reservations we did
+                // before might have already covered it.
                 @branchHint(.unlikely);
-                // find out how many pages are now reserved and then reduce our total usable memory
-                // counter accordingly
+                // find out how many more pages are now reserved and then reduce our total usable
+                // memory counter accordingly
                 const diff = initial_count - final_count;
                 total_usable -= diff * PAGE_SIZE;
             }
@@ -174,13 +178,18 @@ pub const PhysicalMemoryManager = struct {
     pub fn allocPage(self: *PhysicalMemoryManager) u64 {
         // panicking here is fine because there are no physical pages to allocate so we can't
         // recover from that
-        const freePage = self.free_bitmap.findFirstSet() orelse @panic("Out of memory: no single free page found");
-        self.free_bitmap.unset(freePage);
-        return pageToAddress(freePage);
+        const free_address = self.getFirstFreePage();
+        self.free_bitmap.unset(addressToPage(free_address));
+        return free_address;
+    }
+    /// Return the physical address of the first free page.
+    pub fn getFirstFreePage(self: *const PhysicalMemoryManager) u64 {
+        return pageToAddress(self.free_bitmap.findFirstSet() orelse @panic("Out of memory: no single free page found"));
     }
     /// Check if an address is free.
-    fn isFree(self: *PhysicalMemoryManager, address: u64) bool {
+    pub fn isFree(self: *const PhysicalMemoryManager, address: u64) bool {
         const page = addressToPage(address);
+        if (page >= TOTAL_PAGES) return false;
         return self.free_bitmap.isSet(page);
     }
     // find a contiguous range of pages
