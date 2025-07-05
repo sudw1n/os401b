@@ -157,6 +157,93 @@ pub const VirtualMemoryManager = struct {
         return obj.region;
     }
 
+    /// Map an existing physical range into the current address space.
+    ///
+    /// Parameters:
+    ///  * `virt` – the virtual slice to map (ptr + len both page-aligned)
+    ///  * `phys` – the physical base address to map to
+    ///  * `flags` – slice of `VmObjectFlag` controlling caching, permissions, etc.
+    ///
+    /// Requirements:
+    ///  * `virt.ptr` must be page-aligned.
+    ///  * `virt.len` must be a non-zero multiple of the page size.
+    ///  * The `virt` range must not overlap any already-mapped region.
+    ///  * `phys` must point to a reserved physical region of at least `virt.len` bytes.
+    ///
+    /// Errors:
+    ///  * `MisalignedRegion` if `virt` isn't page-aligned or `len` isn't a multiple.
+    ///  * `OverlappingRegion` if the requested range overlaps an existing VmObject.
+    ///  * `OutOfMemory` if allocator errors on OOM.
+    ///
+    /// On success, a new `VmObject` is linked into `vm_objects` list and the mapping is live.
+    pub fn map(self: *VirtualMemoryManager, virt: []u8, phys: u64, flags: []const VmObjectFlag) Error!void {
+        const start = @intFromPtr(virt.ptr);
+        const len = virt.len;
+
+        if (len == 0) {
+            log.err("zero-length mapping requested: virt {x:0>16}", .{start});
+            return Error.MisalignedRegion;
+        }
+
+        // round down start, round up length
+        const aligned_start = paging.pageFloor(start);
+        const aligned_length = paging.pageCeil(len);
+        if (aligned_start != start or aligned_length != len) {
+            log.err("misaligned region: virt {x:0>16}:{x} -> {x:0>16}:{x}", .{ start, len, aligned_start, aligned_length });
+            return Error.MisalignedRegion;
+        }
+
+        // find an insertion point into the sorted linked list by virtual address
+        var prev: ?*VmObject = null;
+        var curr: ?*VmObject = self.vm_objects;
+        while (curr) |node| {
+            const node_start = @intFromPtr(node.region.ptr);
+            const node_end = node_start + node.region.len;
+            if (node_end <= start) {
+                // the node is entirely before our region so keep searching forward
+                prev = curr;
+                curr = node.next;
+            } else {
+                // otherwise we have reached the node region that might come after our given region
+                break;
+            }
+        }
+
+        // check for overlap before insertion
+        if (curr) |node| {
+            const node_start = @intFromPtr(node.region.ptr);
+            const node_end = node_start + node.region.len;
+            // the first check can short-circuit
+            if ((start < node_end) and (start + len > node_start)) {
+                log.err("overlapping region: virt {x:0>16}:{x} overlaps with existing region {x:0>16}:{x}", .{ start, len, node_start, node.region.len });
+                return Error.OverlappingRegion;
+            }
+        }
+
+        const raw_flags = VmObjectFlag.asRaw(flags);
+        const obj = try self.allocator.create(VmObject);
+        obj.* = VmObject{
+            .region = virt,
+            .flags = raw_flags,
+            .next = curr,
+        };
+
+        if (prev) |p| {
+            p.next = obj;
+        } else {
+            // inserting at head
+            self.vm_objects = obj;
+        }
+
+        // back the virtual address with physical pages immediately
+        const entry_flags = VmObjectFlag.toX86(raw_flags);
+
+        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ start, len, phys, flags });
+
+        paging.mapRange(self.pt_root, start, phys, len, entry_flags);
+
+        return;
+    }
 
     pub fn free(self: *VirtualMemoryManager, memory: []u8) void {
         const memory_ptr_val = @intFromPtr(memory.ptr);
