@@ -64,7 +64,7 @@ SECTIONS
         *(.bss .bss.*)
         __kernel_bss_end = .;
 
-        . = ALIGN(16);
+        . = ALIGN(CONSTANT(MAXPAGESIZE));
         __kernel_stack_bottom = .;
         . += KERNEL_STACK_SIZE;
         __kernel_stack_top = .;
