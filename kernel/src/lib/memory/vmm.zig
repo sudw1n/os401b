@@ -4,15 +4,20 @@ const std = @import("std");
 const limine = @import("limine");
 const paging = @import("paging.zig");
 const pmm = @import("pmm.zig");
+const heap = @import("heap.zig");
 
 const log = std.log.scoped(.vmm);
 
-const PageTableEntryFlag = paging.PageTableEntryFlags;
+const PageTableEntryFlag = paging.PageTableEntryFlag;
 
 pub var global_vmm: VirtualMemoryManager = undefined;
 
-pub fn init(allocator: std.mem.Allocator, memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
-    global_vmm = VirtualMemoryManager.init(allocator);
+pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
+    const pt_root = paging.PageTable.initZero();
+    log.debug("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pt_root)});
+    const allocator = heap.allocator();
+    const virt_base = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
+    global_vmm = VirtualMemoryManager.init(pt_root, virt_base, allocator);
 
     // map physical frames
     // TODO: maybe put all of the below stuff in kernel's main source file, since it's part of the kernel's
