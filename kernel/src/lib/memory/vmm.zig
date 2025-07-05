@@ -158,11 +158,42 @@ pub const VirtualMemoryManager = struct {
     }
 
 
+    pub fn free(self: *VirtualMemoryManager, memory: []u8) void {
+        const memory_ptr_val = @intFromPtr(memory.ptr);
+
+        log.debug("Attempting free for 0x{x:0>16}:{x}", .{ memory_ptr_val, memory.len });
+
+        var prev: ?*VmObject = null;
+        var current: ?*VmObject = self.vm_objects;
+        while (current) |vm| {
+            const region_ptr_val = @intFromPtr(vm.region.ptr);
+            if ((memory_ptr_val >= region_ptr_val) and ((memory_ptr_val + memory.len) <= (region_ptr_val + vm.region.len))) {
+                // the given memory falls in this region, so we free this node
+                if (prev) |p| p.next = vm.next;
+                vm.next = null;
+                log.info("free@{x:0>16}:{x}", .{ region_ptr_val, vm.region.len });
+                paging.unmapRange(self.pt_root, region_ptr_val, memory.len);
+                return;
+            }
+            prev = current;
+            current = vm.next;
+        }
+
+        log.warn("No allocated region found matching {x:0>16}:{x}, nothing to free", .{ memory_ptr_val, memory.len });
+    }
+
     pub fn create(self: *VirtualMemoryManager, comptime T: type, flags: []const VmObjectFlag, phys: ?u64) Error!*T {
         const size = @sizeOf(T);
         const ptr = try self.alloc(size, flags, phys);
         return @ptrCast(@alignCast(ptr));
     }
+
+    pub fn destroy(self: *VirtualMemoryManager, comptime T: type, memory: *T) void {
+        const size = @sizeOf(T);
+        const ptr = @as([*]u8, @ptrCast(memory))[0..size];
+        self.free(ptr);
+    }
+
     pub fn switchTo(self: *VirtualMemoryManager) void {
         // Switch to the page table root for this address space
         paging.switchToPML4(self.pt_root);
