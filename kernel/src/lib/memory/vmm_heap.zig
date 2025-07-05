@@ -5,8 +5,8 @@ const paging = @import("paging.zig");
 
 var fba: ?std.heap.FixedBufferAllocator = null;
 
-/// Heap size for the kernel, calculated as a fraction of the total memory specified in build options.
-pub const HEAP_SIZE: usize = (build_options.memory * 1024 * 1024) / 10;
+/// Heap size for the VMM objects
+pub const HEAP_SIZE: usize = 0x4000; // 16 KiB
 
 pub fn init() void {
     const frame = pmm.global_pmm.alloc(HEAP_SIZE);
@@ -20,6 +20,7 @@ pub fn init() void {
 }
 
 pub fn deinit(pml4: *paging.PML4) void {
+    fba.?.reset();
     // Free the physical frame used for the heap
     const heap_buffer = fba.?.buffer;
     paging.unmapRange(pml4, @intFromPtr(heap_buffer.ptr), heap_buffer.len);

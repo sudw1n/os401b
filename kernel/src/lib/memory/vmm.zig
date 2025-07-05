@@ -4,7 +4,7 @@ const std = @import("std");
 const limine = @import("limine");
 const paging = @import("paging.zig");
 const pmm = @import("pmm.zig");
-const heap = @import("heap.zig");
+const heap = @import("vmm_heap.zig");
 
 const log = std.log.scoped(.vmm);
 
@@ -14,7 +14,6 @@ pub var global_vmm: VirtualMemoryManager = undefined;
 
 pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
     const pt_root = paging.PageTable.initZero();
-    log.debug("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pt_root)});
     const allocator = heap.allocator();
     const virt_base = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
     global_vmm = VirtualMemoryManager.init(pt_root, virt_base, allocator);

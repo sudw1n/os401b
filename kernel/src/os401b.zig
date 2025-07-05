@@ -15,7 +15,7 @@ pub const ioapic = @import("lib/interrupts/ioapic.zig");
 pub const registers = @import("lib/registers.zig");
 pub const pmm = @import("lib/memory/pmm.zig");
 pub const paging = @import("lib/memory/paging.zig");
-pub const heap = @import("lib/memory/heap.zig");
+pub const vmm_heap = @import("lib/memory/vmm_heap.zig");
 pub const vmm = @import("lib/memory/vmm.zig");
 pub const acpi = @import("lib/acpi.zig");
 
