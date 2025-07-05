@@ -1,13 +1,14 @@
 const std = @import("std");
 const limine = @import("limine");
 const acpi = @import("../acpi.zig");
-const paging = @import("../memory/paging.zig");
+const vmm = @import("../memory/vmm.zig");
 const lapic = @import("lapic.zig");
 
 const log = std.log.scoped(.ioapic);
-const pagingLog = std.log.scoped(.paging);
 
 const MadtEntry = acpi.MadtEntry;
+
+const VmObjectFlag = vmm.VmObjectFlag;
 
 pub const IoApic = struct {
     /// Physical base address of the I/O APIC
@@ -33,15 +34,12 @@ pub const IoApic = struct {
     pub fn init(entry: acpi.MadtEntry) IoApic {
         const ioapic_base_phys = entry.IoApic.address;
         log.debug("Retrieved I/O APIC base address: {x:0>16}", .{ioapic_base_phys});
-        const ioapic_base_virt = paging.physToVirt(entry.IoApic.address);
-        pagingLog.info("Mapping I/O APIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
-            ioapic_base_virt,
-            ioapic_base_virt + paging.PAGE_SIZE,
-            ioapic_base_phys,
-        });
-        paging.mapPage(ioapic_base_virt, ioapic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
+        const ioapic_base_virt = vmm.global_vmm.alloc(0x1000, &.{ VmObjectFlag.Write, VmObjectFlag.Mmio, VmObjectFlag.Reserved }, ioapic_base_phys) catch @panic("OOM for MMIO I/O APIC");
+        // sanity check: the VMM allocates exactly the requested size if it's page aligned
+        log.debug("Retrieved I/O APIC virtual address: {x:0>16}", .{@intFromPtr(ioapic_base_virt.ptr)});
+        std.debug.assert(ioapic_base_virt.len == 0x1000);
 
-        const ioapic_regs: [*]volatile u32 = @ptrFromInt(ioapic_base_virt);
+        const ioapic_regs: [*]volatile u32 = @ptrCast(@alignCast(ioapic_base_virt.ptr));
 
         return IoApic{
             .base_phys = ioapic_base_phys,
