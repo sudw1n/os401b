@@ -76,6 +76,87 @@ pub const VirtualMemoryManager = struct {
         self.pt_root.deinit();
     }
 
+    /// Allocate virtual memory of the given size with the given flags.
+    /// If `phys` is provided, the virtual address will be mapped to the corresponding physical address for the allocation.
+    pub fn alloc(self: *VirtualMemoryManager, size: u64, flags: []const VmObjectFlag, phys: ?u64) Error![]u8 {
+        const length = paging.pageCeil(size);
+        log.debug("Attempting allocation of 0x{x} bytes", .{length});
+
+        // we are finding the first gap big enough to hold `length`, and then inserting a new
+        // VmObject node either at the front, in the middle, or at the end of the linked list.
+
+        // we keep a prev pointer alonside current. if prev == null then it means we haven't yet seen
+        // any region so in that case we start with self.virt_base
+        var prev: ?*VmObject = null;
+        var current: ?*VmObject = self.vm_objects;
+        var found_base: u64 = 0;
+        while (current) |vm| {
+            // end of the previous region (or virt_base is none yet)
+            const prev_end = if (prev) |p| @intFromPtr(p.region.ptr) + p.region.len else self.virt_base;
+            const next_start = @intFromPtr(vm.region.ptr);
+
+            // is there room between prev_end and next_start?
+            if (prev_end + length <= next_start) {
+                found_base = prev_end;
+                break;
+            }
+
+            // advance
+            prev = current;
+            current = vm.next;
+        }
+        // if we fell off the end, just place the new allocation after the last region
+        if (current == null) {
+            const prev_end = if (prev) |p|
+                @intFromPtr(p.region.ptr) + p.region.len
+            else
+                self.virt_base;
+            found_base = prev_end;
+        }
+
+        // allocate and link in the new VmObject
+        const obj = try self.allocator.create(VmObject);
+        obj.* = VmObject{
+            .region = @as([*]u8, @ptrFromInt(found_base))[0..length],
+            .flags = VmObjectFlag.asRaw(flags),
+            .next = current,
+        };
+        if (prev) |p| {
+            p.next = obj;
+        } else {
+            // inserting at head
+            self.vm_objects = obj;
+        }
+
+        // now we immediately back the virtual address with physical pages
+
+        // if the allocation asks us to map the new virtual address to a physical address that it
+        // has given, then we won't ask the PMM to allocate a new page **assuming** that physical
+        // region has already been reserved in the PMM.
+        const phys_addr: u64 = blk: {
+            if (phys) |p| break :blk p;
+            const p = pmm.global_pmm.alloc(length);
+            // sanity check: since we've already page aligned the size, the returned physical frame
+            // allocation shouldn't have a different length
+            std.debug.assert(p.len == length);
+            break :blk @intFromPtr(p.ptr);
+        };
+
+        // here we use the flags translated into page table entry flags since our VMM will use
+        // paging
+        const entry_flags = VmObjectFlag.toX86(obj.flags);
+        // add an assert for the above assumptions just to be sure.
+        // i.e. the physical address that we have now retrieved is in fact reserved (either just now
+        // or was already) at this point
+        std.debug.assert(pmm.global_pmm.isFree(phys_addr) == false);
+
+        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ @intFromPtr(obj.region.ptr), obj.region.len, phys_addr, flags });
+        paging.mapRange(self.pt_root, @intFromPtr(obj.region.ptr), phys_addr, length, entry_flags);
+
+        log.info("alloc@{x:0>16}:{x}", .{ @intFromPtr(obj.region.ptr), obj.region.len });
+        return obj.region;
+    }
+
     pub fn switchTo(self: *VirtualMemoryManager) void {
         // Switch to the page table root for this address space
         paging.switchToPML4(self.pt_root);
