@@ -1,4 +1,5 @@
 const std = @import("std");
+const build_options = @import("build_options");
 const limine = @import("limine");
 const fblib = @import("lib/tty/framebuffer.zig");
 
@@ -14,6 +15,8 @@ pub const ioapic = @import("lib/interrupts/ioapic.zig");
 pub const registers = @import("lib/registers.zig");
 pub const pmm = @import("lib/memory/pmm.zig");
 pub const paging = @import("lib/memory/paging.zig");
+pub const heap = @import("lib/memory/heap.zig");
+pub const vmm = @import("lib/memory/vmm.zig");
 pub const acpi = @import("lib/acpi.zig");
 
 pub const pit = @import("lib/timers/pit.zig");
@@ -22,8 +25,6 @@ pub const lapic_timer = @import("lib/timers/lapic_timer.zig");
 pub const tsc = @import("lib/timers/tsc.zig");
 
 pub const ps2 = @import("lib/keyboard/ps2.zig");
-
-pub const heap = @import("lib/memory/heap.zig");
 
 pub const SerialWriter = serial.SerialWriter;
 
@@ -39,8 +40,6 @@ pub export var framebuffer_request: limine.FramebufferRequest linksection(".limi
 
 // Expose the memory map request to Limine in the required section.
 pub export var memmap_request: limine.MemoryMapRequest linksection(".limine_requests") = .{};
-
-pub export var hhdm_request: limine.HhdmRequest linksection(".limine_requests") = .{};
 
 pub export var rsdp_request: limine.RsdpRequest linksection(".limine_requests") = .{};
 
