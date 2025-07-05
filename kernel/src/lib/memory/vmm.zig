@@ -73,6 +73,11 @@ pub const VirtualMemoryManager = struct {
         // Free the page table root
         self.pt_root.deinit();
     }
+
+    pub fn switchTo(self: *VirtualMemoryManager) void {
+        // Switch to the page table root for this address space
+        paging.switchToPML4(self.pt_root);
+    }
 };
 
 const VmObject = struct {
