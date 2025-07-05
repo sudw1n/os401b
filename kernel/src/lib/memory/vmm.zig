@@ -38,23 +38,32 @@ pub fn init(allocator: std.mem.Allocator, memory_map: *limine.MemoryMapResponse,
 }
 
 /// Manages the virtual address spaces of processes and the kernel.
+///
+/// There can be more than one instance of this manager. The kernel will have its own instance.
 pub const VirtualMemoryManager = struct {
     /// Page table root for the virtual address space
     pt_root: *paging.PML4,
-    /// A linked list of VM objects that have been allocated
+    /// Initial base address for the virtual address space
+    virt_base: u64,
+    /// A linked list of VM objects that have been allocated to that address space
     vm_objects: ?*VmObject,
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator) VirtualMemoryManager {
-        const pt_root = paging.PageTable.initZero();
-        log.debug("PML4 allocated at address: {x:0>16}", .{@intFromPtr(pt_root)});
+    pub const Error = error{
+        MisalignedRegion,
+        OverlappingRegion,
+    } || std.mem.Allocator.Error;
+
+    pub fn init(pml4: *paging.PML4, virt_base: u64, allocator: std.mem.Allocator) VirtualMemoryManager {
         return VirtualMemoryManager{
-            .pt_root = pt_root,
+            .pt_root = pml4,
+            .virt_base = virt_base,
             .vm_objects = null,
             .allocator = allocator,
         };
     }
 
+    // TODO: complete this. we should also deallocate all the VmObject nodes in the linked list
     pub fn deinit(self: *VirtualMemoryManager) void {
         // Free the page table root
         self.pt_root.deinit();
