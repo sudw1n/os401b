@@ -1,5 +1,6 @@
 const std = @import("std");
 const lib = @import("os401b");
+const build_options = @import("build_options");
 
 const cpu = lib.cpu;
 const serial = lib.serial;
@@ -16,8 +17,9 @@ const ps2 = lib.ps2;
 const registers = lib.registers;
 const pmm = lib.pmm;
 const paging = lib.paging;
-const acpi = lib.acpi;
 const heap = lib.heap;
+const vmm = lib.vmm;
+const acpi = lib.acpi;
 
 const Error = lib.Error;
 
@@ -30,8 +32,16 @@ pub const std_options = std.Options{
     .log_level = .debug,
     .log_scope_levels = &.{
         .{
+            .scope = .pmm,
+            .level = .debug,
+        },
+        .{
             .scope = .paging,
             .level = .info,
+        },
+        .{
+            .scope = .vmm,
+            .level = .debug,
         },
         .{
             .scope = .lapic,
@@ -43,7 +53,7 @@ pub const std_options = std.Options{
         },
         .{
             .scope = .idt,
-            .level = .info,
+            .level = .debug,
         },
     },
     .logFn = serial.log,
@@ -107,16 +117,18 @@ fn init() Error!void {
     if (memmap.entry_count == 0) {
         @panic("No memory map entries found from Limine");
     }
-    const hhdm_response = lib.hhdm_request.response orelse @panic("failed to get HHDM offset from Limine");
-    const hhdm_offset = hhdm_response.offset;
     const executable_address_response = lib.executable_address_request.response orelse @panic("failed to get executable address response from Limine");
 
-    try term.logStepBegin("Setting up physical memory manager", .{});
+    try term.logStepBegin("Initializing the physical memory manager", .{});
     pmm.init(memmap, executable_address_response);
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Setting up new page tables", .{});
-    paging.init(memmap, executable_address_response, hhdm_offset);
+    try term.logStepBegin("Setting up ", .{});
+    heap.init();
+    try term.logStepEnd(true);
+
+    try term.logStepBegin("Setting up virtual memory manager and kernel page tables", .{});
+    vmm.init(memmap, executable_address_response);
     try term.logStepEnd(true);
 
     const rsdp_response = lib.rsdp_request.response orelse @panic("failed to get RSDP response from Limine");
@@ -133,19 +145,12 @@ fn init() Error!void {
     ps2.init();
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Unmasking IRQ lines", .{});
-    ioapic.routeVectors();
+    try term.logStepBegin("Initializing timers", .{});
+    pit.setPeriodic(pit.reloadForMs(100));
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Initializing the heap", .{});
-    heap.init(0x21000);
-
-    var allocator = lib.heap.allocator;
-    log.debug("here", .{});
-    const val1 = allocator.create(u64) catch unreachable;
-    allocator.destroy(val1);
-    const val2 = allocator.create(u64) catch unreachable;
-    std.log.debug("val1 = {any}, val2 = {any}", .{ val1, val2 });
+    try term.logStepBegin("Unmasking IRQ lines", .{});
+    ioapic.routeVectors();
     try term.logStepEnd(true);
 }
 
