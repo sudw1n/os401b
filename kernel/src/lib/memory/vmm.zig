@@ -292,6 +292,23 @@ pub const VirtualMemoryManager = struct {
         // Switch to the page table root for this address space
         paging.switchToPML4(self.pt_root);
     }
+
+    pub fn format(self: VirtualMemoryManager, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("VirtualMemoryManager {{\n", .{});
+        try writer.print("  PML4 Root: {x:0>16}\n", .{@intFromPtr(self.pt_root)});
+        try writer.print("  Base: {x:0>16}\n", .{self.virt_base});
+        try writer.print("  Regions {{\n", .{});
+        var current: ?*VmObject = self.vm_objects;
+        while (current) |vm| {
+            const comma = if (vm.next) |_| "," else "";
+            try writer.print("    {x:0>16}:{x}{s}\n", .{ @intFromPtr(vm.region.ptr), vm.region.len, comma });
+            current = vm.next;
+        }
+        try writer.print("  }}\n", .{});
+        try writer.print("}}", .{});
+    }
 };
 
 const VmObject = struct {
