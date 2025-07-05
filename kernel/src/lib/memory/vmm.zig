@@ -81,6 +81,75 @@ const VmObject = struct {
     next: ?*VmObject,
 };
 
+/// Flags for VM objects, used to determine how the memory should be mapped.
+pub const VmObjectFlag = enum(u64) {
+    /// Disables the VM region
+    Disabled = 1 << 0,
+    /// Makes the VM region writable
+    Write = 1 << 1,
+    /// Makes the VM region executable
+    Exec = 1 << 2,
+    /// Makes the VM region userspace-accessible
+    User = 1 << 3,
+    /// Marks the VM region as Memory-Mapped I/O. Setting this flag also implies Reserved.
+    ///
+    /// This effectively disables caching as well as ensures every write is immediately and
+    /// synchronously propagated to the backing store.
+    ///
+    /// If this bit is cleared, it indicates the object is working (anonymous) memory.
+    Mmio = 1 << 4,
+    /// Marks the VM region as reserved in the physical address space meaning it should remain
+    /// reserved in the PMM.
+    Reserved = 1 << 5,
+
+    pub fn asInt(self: VmObjectFlag) u64 {
+        return @intFromEnum(self);
+    }
+
+    pub fn check(self: VmObjectFlag, flags: u64) bool {
+        return flags & self.asInt() != 0;
+    }
+
+    /// convert the given slice of VmObjectFlag to a single u64 value
+    pub fn asRaw(slice: []const VmObjectFlag) u64 {
+        var value: u64 = 0;
+        for (slice) |flag| {
+            value |= flag.asInt();
+        }
+        return value;
+    }
+
+    /// convert the VM object flags to x86_64 page table flags
+    pub fn toX86(flags: u64) u64 {
+        var value: u64 = 0;
+        if (!VmObjectFlag.Disabled.check(flags)) {
+            value |= PageTableEntryFlag.Present.asInt();
+        }
+        if (VmObjectFlag.Write.check(flags)) {
+            value |= PageTableEntryFlag.Writable.asInt();
+        }
+        if (!VmObjectFlag.Exec.check(flags)) {
+            value |= PageTableEntryFlag.NoExecute.asInt();
+        }
+        if (VmObjectFlag.User.check(flags)) {
+            value |= PageTableEntryFlag.UserAccessible.asInt();
+        }
+        if (VmObjectFlag.Mmio.check(flags)) {
+            value |= (PageTableEntryFlag.WriteThrough.asInt() | PageTableEntryFlag.NoCache.asInt() | PageTableEntryFlag.Reserved.asInt());
+        }
+        if (VmObjectFlag.Reserved.check(flags)) {
+            value |= PageTableEntryFlag.Reserved.asInt();
+        }
+        return value;
+    }
+
+    pub fn format(value: VmObjectFlag, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("{s}", .{@tagName(value)});
+    }
+};
+
 extern const __kernel_start: u8;
 extern const __kernel_end: u8;
 extern const __limine_requests_start: u8;
