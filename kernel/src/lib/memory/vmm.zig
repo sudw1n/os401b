@@ -20,23 +20,31 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     global_vmm = VirtualMemoryManager.init(pt_root, virt_base, allocator);
 
     // map physical frames
-    // TODO: maybe put all of the below stuff in kernel's main source file, since it's part of the kernel's
-    // initialization?
     const entries = memory_map.getEntries();
     for (entries) |entry| {
         const base = entry.base;
         const length = entry.length;
-        const virt_addr = paging.physToVirt(base);
-        const flags: []const paging.PageTableEntryFlags = switch (entry.type) {
-            .usable, .bootloader_reclaimable, .executable_and_modules => &.{ .Present, .Writable },
-            .framebuffer, .acpi_reclaimable, .acpi_nvs => &.{ .Present, .Writable, .WriteThrough, .NoCache },
+        const flags: []const VmObjectFlag = switch (entry.type) {
+            .usable, .bootloader_reclaimable, .acpi_reclaimable => &.{.Write},
+            .acpi_nvs => &.{ .Write, .Reserved },
+            .framebuffer => &.{ .Write, .Mmio, .Reserved },
             else => {
-                log.debug("Skipping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
+                log.debug("Skipping {s} region: phys {x:0>16}:{x}", .{ @tagName(entry.type), base, length });
                 continue;
             },
         };
-        log.info("Mapping {s} region: virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ @tagName(entry.type), virt_addr, virt_addr + length, base });
-        paging.mapRange(global_vmm.pt_root, virt_addr, base, length, flags);
+        const virt = @as([*]u8, @ptrFromInt(paging.physToVirt(base)))[0..length];
+        // Pre-map all available physical memory regions into the page tables.
+        //
+        // By establishing these mappings up front, the VMM won't need to allocate or map
+        // pages on the fly for known regions. Once this initialization is done, any
+        // physical address within these regions can be translated to its virtual address
+        // simply by calling paging.physToVirt() and vice versa.
+        global_vmm.map(virt, base, flags) catch |err| {
+            log.err("Failed to map {s} region: phys {x:0>16}:{x}, error: {}", .{ @tagName(entry.type), base, length, err });
+            @panic("Failed to map memory region");
+        };
+        log.info("Mapped {s} region: virt {x:0>16}:{x} -> phys {x:0>16}", .{ @tagName(entry.type), @intFromPtr(virt.ptr), length, base });
     }
 
     mapOwn(executable_address_response);
