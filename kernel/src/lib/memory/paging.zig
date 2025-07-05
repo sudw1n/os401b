@@ -42,11 +42,13 @@ pub const PageTableEntryFlag = enum(u64) {
     HugePage = 1 << 7,
     /// Indicates that the mapping is present in all address spaces.
     Global = 1 << 8,
-    /// Available for OS use – additional bits.
-    Bit_9 = 1 << 9,
+    // Available for OS use – additional bits.
+    /// Indicates that this page is always reserved in the physical address space. Hence the frame
+    /// should also remain reserved in the PMM even if the virtual page is to be unmapped.
+    Reserved = 1 << 9,
     Bit_10 = 1 << 10,
     Bit_11 = 1 << 11,
-    /// Available for OS use – additional bits.
+    // Available for OS use – additional bits.
     Bit_52 = 1 << 52,
     Bit_53 = 1 << 53,
     Bit_54 = 1 << 54,
@@ -79,7 +81,7 @@ pub const PageTableEntryFlag = enum(u64) {
 /// The entry packs both the physical frame address and the flag bits.
 /// The frame address is stored in bits 12–51.
 pub const PageTableEntry = packed struct {
-    const bit_12_51_mask = 0x000ffffffffff000;
+    const bit_12_51_mask: u64 = 0x000ffffffffff000;
     entry: u64,
 
     /// Initializes a page table entry with the given physical frame address and flags (as a raw u64).
