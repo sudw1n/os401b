@@ -3,10 +3,11 @@ const limine = @import("limine");
 const acpi = @import("../acpi.zig");
 const ioapic = @import("../interrupts/ioapic.zig");
 const lapic = @import("../interrupts/lapic.zig");
-const paging = @import("../memory/paging.zig");
+const vmm = @import("../memory/vmm.zig");
 
 const log = std.log.scoped(.hpet);
-const pagingLog = std.log.scoped(.paging);
+
+const VmObjectFlag = vmm.VmObjectFlag;
 
 /// Represents the High Precision Event Timer (HPET)
 pub const Hpet = struct {
@@ -29,23 +30,17 @@ pub const Hpet = struct {
 
             const hpet: *HpetSdt = @ptrCast(hpet_sdt);
             const hpet_base_phys = hpet.address;
-            const hpet_base = paging.physToVirtRaw(hpet_base_phys);
+            const hpet_base = vmm.global_vmm.alloc(0x1000, &.{ VmObjectFlag.Mmio, VmObjectFlag.Write, VmObjectFlag.Reserved }, hpet_base_phys) catch @panic("OOM for MMIO HPET");
 
-            log.debug("Retrieved HPET base address: {x:0>16}", .{hpet_base_phys});
-            pagingLog.info("Mapping HPET registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
-                hpet_base,
-                hpet_base + paging.PAGE_SIZE,
-                hpet_base_phys,
-            });
-            paging.mapPage(hpet_base, hpet_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
+            const hpet_base_ptr_val = @intFromPtr(hpet_base.ptr);
 
-            const general_configuration = getRegister(GeneralConfiguration, hpet_base, Registers.GeneralConfiguration);
-            const general_capabilities = getRegister(GeneralCapabilities, hpet_base, Registers.GeneralCapabilities);
-            const counter = getRegister(u64, hpet_base, Registers.MainCounterValue);
+            const general_configuration = getRegister(GeneralConfiguration, hpet_base_ptr_val, Registers.GeneralConfiguration);
+            const general_capabilities = getRegister(GeneralCapabilities, hpet_base_ptr_val, Registers.GeneralCapabilities);
+            const counter = getRegister(u64, hpet_base_ptr_val, Registers.MainCounterValue);
 
             return Hpet{
                 .hpet_sdt = hpet,
-                .base = hpet_base,
+                .base = hpet_base_ptr_val,
                 .general_configuration = general_configuration,
                 .general_capabilities = general_capabilities,
                 .counter = counter,
