@@ -157,6 +157,12 @@ pub const VirtualMemoryManager = struct {
         return obj.region;
     }
 
+
+    pub fn create(self: *VirtualMemoryManager, comptime T: type, flags: []const VmObjectFlag, phys: ?u64) Error!*T {
+        const size = @sizeOf(T);
+        const ptr = try self.alloc(size, flags, phys);
+        return @ptrCast(@alignCast(ptr));
+    }
     pub fn switchTo(self: *VirtualMemoryManager) void {
         // Switch to the page table root for this address space
         paging.switchToPML4(self.pt_root);
