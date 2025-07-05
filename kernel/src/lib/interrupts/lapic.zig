@@ -1,16 +1,17 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
 const registers = @import("../registers.zig");
-const paging = @import("../memory/paging.zig");
+const vmm = @import("../memory/vmm.zig");
 const term = @import("../tty/terminal.zig");
 const limine = @import("limine");
 
 const log = std.log.scoped(.lapic);
-const pagingLog = std.log.scoped(.paging);
 
 const Leaf = cpu.Leaf;
 
 const Msr = registers.Msr;
+
+const VmObjectFlag = vmm.VmObjectFlag;
 
 pub const LApic = struct {
     /// Physical base address of the Local APIC
@@ -25,14 +26,11 @@ pub const LApic = struct {
         // extract the base address from the MSR (bits 12-31)
         const apic_base_phys = apic_msr & 0xfffff000;
         log.debug("Retrieved LAPIC base address: {x:0>16}", .{apic_base_phys});
-        const apic_base_virt = paging.physToVirt(apic_base_phys);
-        pagingLog.info("Mapping LAPIC registers virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{
-            apic_base_virt,
-            apic_base_virt + paging.PAGE_SIZE,
-            apic_base_phys,
-        });
-        paging.mapPage(apic_base_virt, apic_base_phys, &.{ .Present, .Writable, .NoCache, .NoExecute });
-        const regs: [*]volatile u32 = @ptrFromInt(apic_base_virt);
+        const apic_base_virt = vmm.global_vmm.alloc(0x1000, &.{ VmObjectFlag.Reserved, VmObjectFlag.Mmio, VmObjectFlag.Write }, apic_base_phys) catch @panic("OOM for MMIO LAPIC");
+        log.debug("Retrieved LAPIC virtual address: {x:0>16}", .{@intFromPtr(apic_base_virt.ptr)});
+        // sanity check: the VMM allocates exactly the requested size if it's page aligned
+        std.debug.assert(apic_base_virt.len == 0x1000);
+        const regs: [*]volatile u32 = @alignCast(@ptrCast(apic_base_virt.ptr));
         return LApic{
             .base_phys = apic_base_phys,
             .regs = regs,
