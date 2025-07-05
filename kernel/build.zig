@@ -6,8 +6,13 @@ pub fn build(b: *std.Build) void {
     const build_options = b.addOptions();
     const memory = b.option(u64, "memory", "Memory to be allocated for the kernel in MiB (default: 128 MiB)") orelse 128;
     const page_size = b.option(u64, "page_size", "Page size for the kernel in bytes (default: 4096)") orelse 4096;
+    const hhdm_offset_str = b.option([]const u8, "hhdm_offset", "Higher-Half Direct Map (HHDM) offset for the kernel in hex (default: ffff800000000000") orelse "0xffff800000000000";
+    const hhdm_offset = std.fmt.parseInt(u64, hhdm_offset_str, 16) catch {
+        @panic("Invalid HHDM offset passed to the build script. A valid hexadecimal value is expected.");
+    };
     build_options.addOption(u64, "memory", memory);
     build_options.addOption(u64, "page_size", page_size);
+    build_options.addOption(u64, "hhdm_offset", hhdm_offset);
     var target_query: std.Target.Query = .{
         .cpu_arch = .x86_64,
         .os_tag = .freestanding,
