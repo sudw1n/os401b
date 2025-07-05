@@ -386,7 +386,7 @@ extern const __kernel_bss_end: u8;
 extern const __kernel_stack_top: u8;
 extern const __kernel_stack_bottom: u8;
 
-// map own stack and code regions
+// map the kernel's own memory regions
 fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
     const vbase = executable_address_response.virtual_base;
     const pbase = executable_address_response.physical_base;
@@ -396,29 +396,29 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
         name: [:0]const u8,
         start: u64,
         end: u64,
-        flags: []const paging.PageTableEntryFlags,
+        flags: []const VmObjectFlag,
     }{
         // .limine_requests: R, read‑only, non-executable
         .{
             .name = "limine_requests",
             .start = @intFromPtr(&__limine_requests_start),
             .end = @intFromPtr(&__limine_requests_end),
-            .flags = &.{ .Present, .NoExecute },
+            .flags = &.{.Reserved},
         },
         // .text: RX, read‑only, executable
         .{
             .name = "text",
             .start = @intFromPtr(&__kernel_code_start),
             .end = @intFromPtr(&__kernel_code_end),
-            .flags = &.{.Present},
+            .flags = &.{ .Reserved, .Exec },
         },
 
-        // .rodata: R‑only, non‑executable
+        // .rodata: R, read-only, non‑executable
         .{
             .name = "rodata",
             .start = @intFromPtr(&__kernel_rodata_start),
             .end = @intFromPtr(&__kernel_rodata_end),
-            .flags = &.{ .Present, .NoExecute },
+            .flags = &.{.Reserved},
         },
 
         // .data: RW, non‑executable
@@ -426,7 +426,7 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
             .name = "data",
             .start = @intFromPtr(&__kernel_data_start),
             .end = @intFromPtr(&__kernel_data_end),
-            .flags = &.{ .Present, .Writable, .NoExecute },
+            .flags = &.{ .Reserved, .Write },
         },
 
         // .bss: RW, non‑executable
@@ -434,7 +434,7 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
             .name = "bss",
             .start = @intFromPtr(&__kernel_bss_start),
             .end = @intFromPtr(&__kernel_bss_end),
-            .flags = &.{ .Present, .Writable, .NoExecute },
+            .flags = &.{ .Reserved, .Write },
         },
 
         // stack: RW, non‑executable (grows down from top)
@@ -442,18 +442,21 @@ fn mapOwn(executable_address_response: *limine.ExecutableAddressResponse) void {
             .name = "stack",
             .start = @intFromPtr(&__kernel_stack_bottom),
             .end = @intFromPtr(&__kernel_stack_top),
-            .flags = &.{ .Present, .Writable, .NoExecute },
+            .flags = &.{ .Reserved, .Write },
         },
     };
 
     for (kernel_regions) |reg| {
-        const virt = reg.start;
-        const length = reg.end - reg.start;
-        const offset = virt - vbase; // how far into the kernel base is this pointer
-        const phys = pbase + offset; // location in RAM for that offset
+        const virt_addr = reg.start; // ensure the start is start address is
+        const length = paging.pageCeil(reg.end - reg.start); // ensure the length is page-aligned
+        const offset = virt_addr - vbase; // how far into the kernel base is this pointer
+        const phys_addr = pbase + offset; // location in RAM for that offset
 
-        log.info("Mapping kernel {s} region virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ reg.name, virt, virt + length, phys });
-
-        paging.mapRange(global_vmm.pt_root, virt, phys, length, reg.flags);
+        const virt = @as([*]u8, @ptrFromInt(virt_addr))[0..length];
+        global_vmm.map(virt, phys_addr, reg.flags) catch |err| {
+            log.err("Failed to map kernel region {s}: virt {x:0>16}:{x} -> phys {x:0>16}, error: {}", .{ reg.name, virt_addr, length, phys_addr, err });
+            @panic("Failed to map kernel region");
+        };
+        log.info("Mapped kernel {s} region virt {x:0>16}-{x:0>16} -> phys {x:0>16}", .{ reg.name, virt_addr, virt_addr + length, phys_addr });
     }
 }
