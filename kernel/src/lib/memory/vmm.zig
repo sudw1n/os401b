@@ -40,6 +40,8 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     }
 
     mapOwn(executable_address_response);
+
+    global_vmm.switchTo();
 }
 
 /// Manages the virtual address spaces of processes and the kernel.
@@ -81,7 +83,7 @@ pub const VirtualMemoryManager = struct {
 };
 
 const VmObject = struct {
-    ptr: []u8,
+    region: []u8,
     flags: u64,
     next: ?*VmObject,
 };
