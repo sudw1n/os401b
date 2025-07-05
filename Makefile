@@ -18,7 +18,7 @@ KERNEL_BIN                 := $(KERNEL_DIR)/zig-out/bin/kernel
 RAM_SIZE_MiB               := 256
 
 # Zig compiler flags.
-ZIG_FLAGS                  := -Doptimize=ReleaseSafe -Dmemory=$(RAM_SIZE_MiB) -Dpage_size=4096
+ZIG_FLAGS                  := -Doptimize=ReleaseFast -Dmemory=$(RAM_SIZE_MiB) -Dpage_size=4096 -Dhhdm_offset=ffff800000000000
 
 QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
