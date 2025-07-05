@@ -134,6 +134,8 @@ pub const PageTable = struct {
     pub const ENTRY_COUNT = 512;
     entries: [ENTRY_COUNT]PageTableEntry,
 
+    pub const Error = pmm.PhysicalMemoryManager.Error;
+
     /// Allocate a page table
     pub fn init() *PageTable {
         // Allocate a 4096-byte block for the page table.
@@ -150,12 +152,12 @@ pub const PageTable = struct {
         }
         return table;
     }
-    pub fn deinit(self: *PageTable) void {
+    pub fn deinit(self: *PageTable) Error!void {
         // we need to give the physical address of ourselves to the PMM
         const phys_ptr: [*]u8 = @ptrFromInt(virtToPhys(@intFromPtr(self)));
         // Deallocate the page table.
         const len = @sizeOf(PageTable);
-        pmm.global_pmm.free(phys_ptr[0..len]);
+        try pmm.global_pmm.free(phys_ptr[0..len]);
     }
     pub fn isEmpty(self: *PageTable) bool {
         // Check if all entries are zero (not mapped).
@@ -301,7 +303,13 @@ pub fn unmapPage(pml4: *PML4, virt_addr: u64) void {
     const pt_entry = &pt.entries[pt_index];
     log.debug("Unmapping the physical address {x:0>16} from PT at index {d}.", .{ pt_entry.getFrameAddress(), pt_index });
     pt_entry.clearFlags(&.{.Present});
-    pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pt_entry.getFrameAddress()))[0..PAGE_SIZE]);
+    // only mark the page as free in the PMM, but only if it's not reserved (e.g., MMIO)
+    if (!pt_entry.checkFlag(PageTableEntryFlag.Reserved)) {
+        pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pt_entry.getFrameAddress()))[0..PAGE_SIZE]) catch |err| {
+            log.err("Failed to free frame at {x:0>16}: {any}", .{ pt_entry.getFrameAddress(), err });
+            @panic("Failed to unmap PT entry");
+        };
+    }
 
     // also invalidate the TLB entry for this page
     asm volatile (
@@ -316,21 +324,39 @@ pub fn unmapPage(pml4: *PML4, virt_addr: u64) void {
     // cleanup PT
     if (pt.isEmpty()) {
         log.debug("PT at index {d} is empty. Deallocating.", .{pt_index});
-        pt.deinit();
+        pt.deinit() catch |err| {
+            log.err("Failed to free PT at {x:0>16}: {any}", .{ @intFromPtr(pt), err });
+            @panic("Failed to dealloc PT");
+        };
         pd_entry.clearFlags(&.{.Present});
-        pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pd_entry.getFrameAddress()))[0..PAGE_SIZE]);
+        pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pd_entry.getFrameAddress()))[0..PAGE_SIZE]) catch |err| {
+            log.err("Failed to free frame at {x:0>16}: {any}", .{ pd_entry.getFrameAddress(), err });
+            @panic("Failed to unmap PD entry");
+        };
 
         if (pd.isEmpty()) {
             log.debug("PD at index {d} is empty. Deallocating.", .{pd_index});
-            pd.deinit();
+            pd.deinit() catch |err| {
+                log.err("Failed to free PD at {x:0>16}: {any}", .{ @intFromPtr(pd), err });
+                @panic("Failed to dealloc PD");
+            };
             pdpt_entry.clearFlags(&.{.Present});
-            pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pdpt_entry.getFrameAddress()))[0..PAGE_SIZE]);
+            pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pdpt_entry.getFrameAddress()))[0..PAGE_SIZE]) catch |err| {
+                log.err("Failed to free frame at {x:0>16}: {any}", .{ pdpt_entry.getFrameAddress(), err });
+                @panic("Failed to unmap PDPT entry");
+            };
 
             if (pdpt.isEmpty()) {
                 log.debug("PDPT at index {d} is empty. Deallocating.", .{pdpt_index});
-                pdpt.deinit();
+                pdpt.deinit() catch |err| {
+                    log.err("Failed to free PDPT at {x:0>16}: {any}", .{ @intFromPtr(pdpt), err });
+                    @panic("Failed to dealloc PDPT");
+                };
                 pml4_entry.clearFlags(&.{.Present});
-                pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pml4_entry.getFrameAddress()))[0..PAGE_SIZE]);
+                pmm.global_pmm.free(@as([*]u8, @ptrFromInt(pml4_entry.getFrameAddress()))[0..PAGE_SIZE]) catch |err| {
+                    log.err("Failed to free frame at {x:0>16}: {any}", .{ pdpt_entry.getFrameAddress(), err });
+                    @panic("Failed to unmap PML4 entry");
+                };
             }
         }
     }
