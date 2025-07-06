@@ -1,17 +1,11 @@
 const pmm = @import("../pmm.zig");
-const paging = @import("../paging.zig");
+const vmm = @import("../vmm.zig");
 
 pub const Allocator = struct {
     heap: []u8,
     current: usize,
     pub fn init(size: u64) Allocator {
-        const frame = pmm.global_pmm.alloc(size);
-        const virt = paging.physToVirt(@intFromPtr(frame.ptr));
-        paging.mapRange(virt, @intFromPtr(frame.ptr), frame.len, &.{
-            .Writable,
-            .Present,
-        });
-        const heap = @as([*]u8, @ptrFromInt(virt))[0..frame.len];
+        const heap = vmm.global_vmm.alloc(size, &.{.Write}, null);
         return Allocator{
             .heap = heap,
             .current = 0,
@@ -19,7 +13,7 @@ pub const Allocator = struct {
     }
 
     pub fn deinit(self: Allocator) void {
-        pmm.global_pmm.free(self.heap);
+        vmm.global_vmm.free(self.heap);
     }
 
     pub fn alloc(self: *Allocator, size: usize) []u8 {
