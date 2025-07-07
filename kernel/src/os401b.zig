@@ -28,6 +28,7 @@ pub const paging = @import("lib/memory/paging.zig");
 pub const vmm_heap = @import("lib/memory/vmm_heap.zig");
 pub const vmm = @import("lib/memory/vmm.zig");
 pub const allocator = @import("lib/memory/allocator.zig");
+pub const Allocator = allocator.Allocator;
 
 // ACPI
 pub const acpi = @import("lib/acpi.zig");
