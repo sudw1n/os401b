@@ -1,99 +1,112 @@
 const std = @import("std");
-const pmm = @import("../pmm.zig");
-const vmm = @import("../vmm.zig");
+const pmm = @import("pmm.zig");
+const vmm = @import("vmm.zig");
 
 const log = std.log.scoped(.heap);
 
 pub const Allocator = struct {
     heap: []u8,
-    current: usize,
+    end_index: usize,
     remaining: usize,
 
-    const ChunkHeader = extern struct {
-        size: usize align(1),
-        status: ChunkStatus align(1),
+    const ChunkHeader = struct {
+        size: usize,
+        status: ChunkStatus,
     };
     const ChunkStatus = enum(u8) { Free, Used };
 
-    pub fn init(size: u64) Allocator {
-        const heap = vmm.global_vmm.alloc(size, &.{.Write}, null);
+    const Self = @This();
+
+    pub fn init(size: u64) Self {
+        const heap = vmm.global_vmm.alloc(size, &.{.Write}, null) catch |err| {
+            log.err("Failed initializing heap allocator: {}", .{err});
+            @panic("Failed to initialize heap allocator");
+        };
         log.info("Heap allocator initialized at {x:0>16}:{x}", .{ @intFromPtr(heap.ptr), heap.len });
-        return Allocator{
+        return Self{
             .heap = heap,
-            .current = 0,
+            .end_index = 0,
             .remaining = heap.len,
         };
     }
 
-    pub fn deinit(self: *Allocator) void {
-        self.current = 0;
+    pub fn deinit(self: *Self) void {
+        self.end_index = 0;
         self.remaining = 0;
         vmm.global_vmm.free(self.heap);
     }
 
-    pub fn alloc(self: *Allocator, size: usize) []u8 {
-        if (self.current + size > self.heap.len) {
-            @panic("Allocator out of memory");
+    pub fn allocator(self: *Self) std.mem.Allocator {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = std.mem.Allocator.noResize,
+                .remap = std.mem.Allocator.noRemap,
+                .free = free,
+            },
+        };
+    }
+
+    pub fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        _ = ret_addr;
+        // todo: handle alignment
+        // maybe reference this: https://ziglang.org/documentation/0.14.1/std/#std.heap.FixedBufferAllocator.alloc
+        _ = alignment;
+
+        var self: *Self = @ptrCast(@alignCast(ctx));
+
+        if (self.end_index + len > self.heap.len) {
+            return null;
         }
+
         // typecast the current position to a ChunkHeader pointer
-        const hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(self.heap[self.current..]));
+        const hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(self.heap[self.end_index..]));
         // fill in the header information
         hdr_ptr.* = ChunkHeader{
-            .size = size,
+            .size = len,
             .status = ChunkStatus.Used,
         };
         // move forward the pointer
-        self.current += @sizeOf(ChunkHeader);
+        self.end_index += @sizeOf(ChunkHeader);
         // return the memory after the header
-        const chunk = self.heap[self.current .. self.current + size];
+        const chunk = self.heap[self.end_index .. self.end_index + len];
         // move forward the pointer by the size of allocation
-        self.current += size;
-        self.remaining -= size + @sizeOf(ChunkHeader);
-        log.debug("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), chunk.len, self.remaining });
-        return chunk;
+        self.end_index += len;
+
+        self.remaining -= (len + @sizeOf(ChunkHeader));
+
+        log.info("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), chunk.len, self.remaining });
+        return chunk.ptr;
     }
 
-    pub fn allocZ(self: *Allocator, size: usize) []u8 {
-        const ptr = self.alloc(size);
-        for (ptr) |*byte| {
-            byte.* = 0; // Initialize the memory to zero
-        }
-        return ptr;
-    }
+    pub fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        _ = alignment;
+        _ = ret_addr;
 
-    pub fn create(self: *Allocator, comptime T: type) *T {
-        const size = @sizeOf(T);
-        const ptr = self.alloc(size);
-        return @ptrCast(@alignCast(ptr));
-    }
+        if (memory.len == 0) return;
 
-    pub fn createZ(self: *Allocator, comptime T: type) *T {
-        const size = @sizeOf(T);
-        const ptr = self.allocZ(size);
-        return @ptrCast(@alignCast(ptr));
-    }
+        var self: *Self = @ptrCast(@alignCast(ctx));
+        self.validatePtr(memory);
 
-    pub fn free(self: *Allocator, chunk: []u8) void {
-        self.validatePtr(chunk);
-
-        const hdr_ptr: *ChunkHeader = ptrToHeader(chunk);
+        const hdr_ptr: *ChunkHeader = ptrToHeader(memory.ptr);
         if (hdr_ptr.status == ChunkStatus.Used) {
             @branchHint(.likely);
             hdr_ptr.status = ChunkStatus.Free;
             self.remaining += hdr_ptr.size + @sizeOf(ChunkHeader);
-            log.debug("free@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), chunk.len, self.remaining });
+            log.info("free@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(memory.ptr), memory.len, self.remaining });
             return;
         }
         @panic("Double free");
     }
 
-    fn validatePtr(self: *Allocator, ptr: []u8) void {
-        if (@intFromPtr(ptr) < @intFromPtr(self.heap.ptr) or @intFromPtr(ptr) >= @intFromPtr(self.heap.ptr) + self.heap.len) {
+    fn validatePtr(self: *Self, pointer: []u8) void {
+        if (@intFromPtr(pointer.ptr) < @intFromPtr(self.heap.ptr) or @intFromPtr(pointer.ptr) >= @intFromPtr(self.heap.ptr) + self.heap.len) {
             @panic("free: given pointer is outside the heap bounds");
         }
     }
 
-    fn ptrToHeader(ptr: []u8) *ChunkHeader {
+    fn ptrToHeader(ptr: [*]u8) *ChunkHeader {
         // Calculate the pointer to the header based on the pointer to the data
         return @ptrFromInt(@intFromPtr(ptr) - @sizeOf(ChunkHeader));
     }
