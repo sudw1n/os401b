@@ -2,30 +2,37 @@ const std = @import("std");
 const lib = @import("os401b");
 const build_options = @import("build_options");
 
-const cpu = lib.cpu;
-const serial = lib.serial;
 const term = lib.term;
+const serial = lib.serial;
+
+const cpu = lib.cpu;
+const registers = lib.registers;
+
 const gdt = lib.gdt;
 const idt = lib.idt;
-const lapic = lib.lapic;
-const ioapic = lib.ioapic;
-const pit = lib.pit;
-const hpet = lib.hpet;
-const lapic_timer = lib.lapic_timer;
-const tsc = lib.tsc;
-const ps2 = lib.ps2;
-const registers = lib.registers;
+
 const pmm = lib.pmm;
 const paging = lib.paging;
 const vmm_heap = lib.vmm_heap;
 const vmm = lib.vmm;
+const allocator = lib.allocator;
+
 const acpi = lib.acpi;
+
+const lapic = lib.lapic;
+const ioapic = lib.ioapic;
+
+const pit = lib.pit;
+const hpet = lib.hpet;
+const lapic_timer = lib.lapic_timer;
+const tsc = lib.tsc;
+const Hpet = lib.hpet.Hpet;
+
+const ps2 = lib.ps2;
 
 const Error = lib.Error;
 
-const Hpet = lib.hpet.Hpet;
-
-const VERSION = "0.0.1";
+const KERNEL_VERSION = "0.0.1";
 
 /// Standard Library Options
 pub const std_options = std.Options{
@@ -153,7 +160,7 @@ fn init() Error!void {
 
 fn welcome() Error!void {
     try term.print("Welcome to ", .{});
-    try term.colorPrint(lib.Color.BrightCyan, "OS401b v{s}!\n\n", .{VERSION});
+    try term.colorPrint(lib.Color.BrightCyan, "OS401b v{s}!\n\n", .{KERNEL_VERSION});
 }
 
 // dummy shell for now
