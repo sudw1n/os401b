@@ -8,11 +8,16 @@ pub const Allocator = struct {
     heap: []u8,
     end_index: usize,
     remaining: usize,
+    chunks_head: ?*ChunkHeader = null,
+    chunks_tail: ?*ChunkHeader = null,
 
     const ChunkHeader = struct {
         // TODO: make this 0x10 bytes aligned, so that we can store the status in the first nibble
         size: usize,
         status: ChunkStatus,
+        // for merging contiguous free chunks
+        prev: ?*ChunkHeader = null,
+        next: ?*ChunkHeader = null,
     };
     const ChunkStatus = enum(u8) { Free, Used };
 
@@ -58,34 +63,43 @@ pub const Allocator = struct {
         var self: *Self = @ptrCast(@alignCast(ctx));
 
         const header_size = @sizeOf(ChunkHeader);
-        var hdr_ptr: *ChunkHeader = undefined;
 
-        // look for chunks already allocated and freed to find one that satisfies this allocation
-        var curr: usize = 0;
+        var node = self.chunks_head;
+        while (node) |hdr| {
+            if (hdr.size >= len and hdr.status == .Free) {
+                hdr.status = .Used;
 
-        while (curr < self.end_index) {
-            hdr_ptr = @ptrCast(@alignCast(self.heap[curr..]));
-            if (hdr_ptr.size >= len and hdr_ptr.status == .Free) {
-                hdr_ptr.status = .Used;
-
-                const chunk = self.heap[curr + header_size ..];
+                const chunk: [*]u8 = @as([*]u8, @ptrCast(hdr)) + header_size;
                 self.remaining -= (len + header_size);
-                log.info("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), len, self.remaining });
+                log.info("alloc@{x:0>16}:{x} (reuse), remaining {x}", .{ @intFromPtr(chunk), len, self.remaining });
 
-                return chunk.ptr;
+                return chunk;
             }
-            curr += header_size + hdr_ptr.size;
+            node = hdr.next;
         }
 
         if (self.end_index + len > self.heap.len) return null;
 
         // typecast the current position to a ChunkHeader pointer
-        hdr_ptr = @ptrCast(@alignCast(self.heap[self.end_index..]));
+        const hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(self.heap[self.end_index..]));
         // fill in the header information
         hdr_ptr.* = ChunkHeader{
             .size = len,
             .status = ChunkStatus.Used,
+            .prev = self.chunks_tail,
+            .next = null,
         };
+
+        // hook the newly carved out chunk at the tail of the doubly-linked list
+        if (self.chunks_tail) |last| {
+            // link the last chunk to the current one
+            last.next = hdr_ptr;
+        } else {
+            // this is the first chunk
+            self.chunks_head = hdr_ptr;
+        }
+        self.chunks_tail = hdr_ptr;
+
         // move forward the pointer
         self.end_index += header_size;
         // return the memory after the header
@@ -111,10 +125,32 @@ pub const Allocator = struct {
         const hdr_ptr: *ChunkHeader = ptrToHeader(memory.ptr);
         if (hdr_ptr.status == ChunkStatus.Used) {
             @branchHint(.likely);
-            log.debug("header@{x:0>16} = {any}", .{ @intFromPtr(hdr_ptr), hdr_ptr });
             hdr_ptr.status = ChunkStatus.Free;
             self.remaining += hdr_ptr.size + @sizeOf(ChunkHeader);
             log.info("free@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(memory.ptr), memory.len, self.remaining });
+            // merging
+            if (hdr_ptr.next) |next| {
+                // merge with next chunk if it is free
+                if (next.status == ChunkStatus.Free) {
+                    log.debug("merging {x:0>16}:{x} on right with {x:0>16}:{x}", .{ @intFromPtr(hdr_ptr), hdr_ptr.size, @intFromPtr(next), next.size });
+                    hdr_ptr.size += next.size + @sizeOf(ChunkHeader);
+                    hdr_ptr.next = next.next;
+                    if (next.next) |next_next| {
+                        next_next.prev = hdr_ptr;
+                    }
+                }
+            }
+            if (hdr_ptr.prev) |prev| {
+                // merge with previous chunk if it is free
+                if (prev.status == ChunkStatus.Free) {
+                    log.debug("merging {x:0>16}:{x} on left with {x:0>16}:{x}", .{ @intFromPtr(hdr_ptr), hdr_ptr.size, @intFromPtr(prev), prev.size });
+                    prev.size += hdr_ptr.size + @sizeOf(ChunkHeader);
+                    prev.next = hdr_ptr.next;
+                    if (hdr_ptr.next) |next| {
+                        next.prev = prev;
+                    }
+                }
+            }
             return;
         }
         @panic("Double free");
