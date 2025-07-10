@@ -71,6 +71,10 @@ pub const Allocator = struct {
         const min_payload_size = 0x10;
         const size = @max(len, min_payload_size);
 
+        if (self.end_index + size >= self.heap.len - min_payload_size) {
+            self.expand() orelse return null;
+        }
+
         var node = self.chunks_head;
         while (node) |hdr| {
             if (hdr.size >= size and hdr.status == .Free) {
@@ -113,8 +117,6 @@ pub const Allocator = struct {
             }
             node = hdr.next;
         }
-
-        if (self.end_index + size > self.heap.len) return null;
 
         // typecast the current position to a ChunkHeader pointer
         const hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(self.heap[self.end_index..]));
@@ -192,6 +194,30 @@ pub const Allocator = struct {
         }
         log.err("double free on {x:0>16}:{x}({x})", .{ @intFromPtr(memory.ptr), memory.len, hdr_ptr.size });
         @panic("Double free");
+    }
+
+    // Expands the heap by a certain amount, at least 4KB or double the current size.
+    // The virtual address range of the heap remains contiguous even though the expanded slice may
+    // be in a different physical memory location.
+    fn expand(self: *Self) ?void {
+        // either we expand by 4KB or double the size of the heap
+        const expansion_size = @max(self.heap.len, 0x1000); // at least 4KB
+        const new_heap_size = self.heap.len + expansion_size;
+
+        const new_heap = self.vmm.alloc(new_heap_size, &.{.Write}, null) catch |err| {
+            log.err("Failed to expand heap: {}", .{err});
+            return null;
+        };
+        @memcpy(new_heap[0..self.heap.len], self.heap);
+        // free the old heap memory
+        self.vmm.free(self.heap);
+        self.heap = new_heap;
+        self.remaining += expansion_size;
+
+        log.info("Expanded heap from {x:0>16}:{x} to {x}, remaining {x}", .{
+            @intFromPtr(self.heap.ptr), self.heap.len,
+            new_heap_size,              self.remaining,
+        });
     }
 
     fn validatePtr(self: *Self, pointer: []u8) void {
