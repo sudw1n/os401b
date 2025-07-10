@@ -72,8 +72,10 @@ pub const Allocator = struct {
                 const chunk: [*]u8 = @as([*]u8, @ptrCast(hdr)) + header_size;
                 self.remaining -= (len + header_size);
                 log.info("alloc@{x:0>16}:{x} (reuse), remaining {x}", .{ @intFromPtr(chunk), len, self.remaining });
+                const chunk: []u8 = (@as([*]u8, @ptrCast(hdr)) + header_size)[0..size];
+                @memset(chunk, 0);
 
-                return chunk;
+                return chunk.ptr;
             }
             node = hdr.next;
         }
@@ -110,6 +112,7 @@ pub const Allocator = struct {
         self.remaining -= (len + header_size);
 
         log.info("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), len, self.remaining });
+        @memset(chunk, 0);
         return chunk.ptr;
     }
 
