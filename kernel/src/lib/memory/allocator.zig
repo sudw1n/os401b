@@ -107,7 +107,7 @@ pub const Allocator = struct {
         // move forward the pointer
         self.end_index += header_size;
         // return the memory after the header
-        const chunk = self.heap[self.end_index..];
+        const chunk = self.heap[self.end_index .. self.end_index + size];
         // move forward the pointer by the size of allocation
         self.end_index += size;
 
