@@ -4,7 +4,10 @@ const vmm = @import("vmm.zig");
 
 const log = std.log.scoped(.heap);
 
+const VirtualMemoryManager = vmm.VirtualMemoryManager;
+
 pub const Allocator = struct {
+    vmm: *VirtualMemoryManager,
     heap: []u8,
     end_index: usize,
     remaining: usize,
@@ -23,13 +26,14 @@ pub const Allocator = struct {
 
     const Self = @This();
 
-    pub fn init(size: u64) Self {
-        const heap = vmm.global_vmm.alloc(size, &.{.Write}, null) catch |err| {
+    pub fn init(vmm_instance: *VirtualMemoryManager, initial_size: u64) Self {
+        const heap = vmm_instance.alloc(initial_size, &.{.Write}, null) catch |err| {
             log.err("Failed initializing heap allocator: {}", .{err});
             @panic("Failed to initialize heap allocator");
         };
         log.info("Heap allocator initialized at {x:0>16}:{x}", .{ @intFromPtr(heap.ptr), heap.len });
         return Self{
+            .vmm = vmm_instance,
             .heap = heap,
             .end_index = 0,
             .remaining = heap.len,
