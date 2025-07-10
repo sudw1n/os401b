@@ -190,6 +190,7 @@ pub const Allocator = struct {
             }
             return;
         }
+        log.err("double free on {x:0>16}:{x}({x})", .{ @intFromPtr(memory.ptr), memory.len, hdr_ptr.size });
         @panic("Double free");
     }
 
