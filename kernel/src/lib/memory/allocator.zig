@@ -64,15 +64,17 @@ pub const Allocator = struct {
 
         const header_size = @sizeOf(ChunkHeader);
 
+        const min_payload_size = 0x10;
+        const size = @max(len, min_payload_size);
+
         var node = self.chunks_head;
         while (node) |hdr| {
-            if (hdr.size >= len and hdr.status == .Free) {
+            if (hdr.size >= size and hdr.status == .Free) {
                 hdr.status = .Used;
 
-                const chunk: [*]u8 = @as([*]u8, @ptrCast(hdr)) + header_size;
-                self.remaining -= (len + header_size);
-                log.info("alloc@{x:0>16}:{x} (reuse), remaining {x}", .{ @intFromPtr(chunk), len, self.remaining });
                 const chunk: []u8 = (@as([*]u8, @ptrCast(hdr)) + header_size)[0..size];
+                self.remaining -= (size + header_size);
+                log.info("alloc@{x:0>16}:{x} (reuse), remaining {x}", .{ @intFromPtr(chunk.ptr), size, self.remaining });
                 @memset(chunk, 0);
 
                 return chunk.ptr;
@@ -80,13 +82,13 @@ pub const Allocator = struct {
             node = hdr.next;
         }
 
-        if (self.end_index + len > self.heap.len) return null;
+        if (self.end_index + size > self.heap.len) return null;
 
         // typecast the current position to a ChunkHeader pointer
         const hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(self.heap[self.end_index..]));
         // fill in the header information
         hdr_ptr.* = ChunkHeader{
-            .size = len,
+            .size = size,
             .status = ChunkStatus.Used,
             .prev = self.chunks_tail,
             .next = null,
@@ -107,11 +109,11 @@ pub const Allocator = struct {
         // return the memory after the header
         const chunk = self.heap[self.end_index..];
         // move forward the pointer by the size of allocation
-        self.end_index += len;
+        self.end_index += size;
 
-        self.remaining -= (len + header_size);
+        self.remaining -= (size + header_size);
 
-        log.info("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), len, self.remaining });
+        log.info("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), size, self.remaining });
         @memset(chunk, 0);
         return chunk.ptr;
     }
