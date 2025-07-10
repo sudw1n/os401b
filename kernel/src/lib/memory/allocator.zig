@@ -75,7 +75,35 @@ pub const Allocator = struct {
                 const chunk: []u8 = (@as([*]u8, @ptrCast(hdr)) + header_size)[0..size];
                 self.remaining -= (size + header_size);
                 log.info("alloc@{x:0>16}:{x} (reuse), remaining {x}", .{ @intFromPtr(chunk.ptr), size, self.remaining });
+
                 @memset(chunk, 0);
+
+                // check if the chunk is large enough to be split
+                const leftover_size = hdr.size - size;
+                if (leftover_size >= header_size + min_payload_size) {
+                    // split the chunk
+                    // new chunk will be after the user data section of the chunk we're about to
+                    // return
+                    const new_hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(chunk.ptr + size));
+                    const remaining_size = leftover_size - header_size;
+
+                    log.debug("splitting chunk {x:0>16}:{x} into allocated chunk {x:0>16}:{x} and free chunk {x:0>16}:{x}", .{
+                        @intFromPtr(hdr),         hdr.size,
+                        @intFromPtr(chunk.ptr),   size,
+                        @intFromPtr(new_hdr_ptr), leftover_size - header_size,
+                    });
+                    new_hdr_ptr.* = ChunkHeader{
+                        .size = remaining_size,
+                        .status = ChunkStatus.Free,
+                        .prev = hdr,
+                        .next = hdr.next,
+                    };
+                    if (hdr.next) |next| {
+                        next.prev = new_hdr_ptr;
+                    }
+                    hdr.size = size;
+                    hdr.next = new_hdr_ptr;
+                }
 
                 return chunk.ptr;
             }
