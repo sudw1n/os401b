@@ -195,7 +195,7 @@ pub const VirtualMemoryManager = struct {
     ///  * `OutOfMemory` if allocator errors on OOM.
     ///
     /// On success, a new `VmObject` is linked into `vm_objects` list and the mapping is live.
-    pub fn map(self: *VirtualMemoryManager, virt: []u8, phys: u64, flags: []const VmObjectFlag) Error!void {
+    pub fn map(self: *VirtualMemoryManager, virt: []u8, phys: ?u64, flags: []const VmObjectFlag) Error!void {
         const start = @intFromPtr(virt.ptr);
         const len = virt.len;
 
@@ -257,9 +257,17 @@ pub const VirtualMemoryManager = struct {
         // back the virtual address with physical pages immediately
         const entry_flags = VmObjectFlag.toX86(raw_flags);
 
-        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ start, len, phys, flags });
+        const phys_addr = blk: {
+            if (phys) |p| break :blk p;
+            const p = pmm.global_pmm.alloc(len);
+            // sanity check: since we've already page aligned the size, the returned physical frame
+            // allocation shouldn't have a different length
+            std.debug.assert(p.len == len);
+            break :blk @intFromPtr(p.ptr);
+        };
+        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ start, len, phys_addr, flags });
 
-        paging.mapRange(self.pt_root, start, phys, len, entry_flags);
+        paging.mapRange(self.pt_root, start, phys_addr, len, entry_flags);
 
         return;
     }
