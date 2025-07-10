@@ -132,7 +132,7 @@ pub const Allocator = struct {
             @branchHint(.likely);
             hdr_ptr.status = ChunkStatus.Free;
             self.remaining += hdr_ptr.size + @sizeOf(ChunkHeader);
-            log.info("free@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(memory.ptr), memory.len, self.remaining });
+            log.info("free@{x:0>16}:{x}({x}), remaining {x}", .{ @intFromPtr(memory.ptr), memory.len, hdr_ptr.size, self.remaining });
             // merging
             if (hdr_ptr.next) |next| {
                 // merge with next chunk if it is free
