@@ -99,7 +99,6 @@ pub fn kmain() Error!void {
     // spawn a shell
     log.info("spawning the shell", .{});
     try shell();
-    while (true) {}
 }
 
 fn init() Error!void {
