@@ -28,5 +28,5 @@ pub fn deinit(pml4: *paging.PML4) void {
 }
 
 pub fn allocator() std.mem.Allocator {
-    return (fba orelse @panic("Heap not initialized")).allocator();
+    return (fba orelse @panic("Heap not initialized")).threadSafeAllocator();
 }
