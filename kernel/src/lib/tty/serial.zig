@@ -86,7 +86,9 @@ pub const SerialWriter = struct {
 
     fn writeStr(s: []const u8) void {
         for (s) |c| {
-            while (isTransmitEmpty()) {}
+            while (isTransmitEmpty()) {
+                asm volatile ("pause");
+            }
             cpu.out(u8, PORT, c);
         }
     }
