@@ -5,14 +5,24 @@ const cpu = @import("../cpu.zig");
 const out = cpu.out;
 const in = cpu.in;
 
+pub const TICKS_PER_SEC: u32 = 1000; // 1 ms tick
 pub const frequency: u32 = 1193182; // 1.193182 MHz
+
+pub fn init() void {
+    const reload = reloadForHz(TICKS_PER_SEC);
+    setPeriodic(reload);
+}
 
 /// Return the initial count needed to generate interrupts at the given rate.
 ///
 /// hz: Desired interrupt frequency, in hertz (i.e. how many interrupts per second).
 pub fn reloadForHz(hz: u32) u16 {
-    const reload_value = std.math.divCeil(u16, frequency, hz) catch @panic("reloadForHz: invalid frequency");
-    return reload_value;
+    if (hz == 0) @panic("reloadForHz: frequency cannot be zero");
+    const raw: u32 = std.math.divCeil(u32, frequency, hz) catch @panic("reloadForHz: division error");
+    if (raw > std.math.maxInt(u16)) {
+        @panic("reloadForHz: resulting count too large for 16 bits");
+    }
+    return @truncate(raw);
 }
 
 /// Return the initial count needed to generate interrupts at the given rate.
