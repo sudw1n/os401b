@@ -33,7 +33,7 @@ const Error = lib.Error;
 
 const KERNEL_VERSION = "0.0.1";
 
-const HEAP_SIZE = 0x100000; // 1 MiB
+const HEAP_SIZE = 0x21000;
 
 /// Standard Library Options
 pub const std_options = std.Options{
