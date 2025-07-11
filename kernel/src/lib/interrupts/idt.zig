@@ -12,6 +12,7 @@ const cpu = @import("../cpu.zig");
 const lapic = @import("lapic.zig");
 const ioapic = @import("ioapic.zig");
 const ps2 = @import("../keyboard/ps2.zig");
+const pit = @import("../timers/pit.zig");
 const registers = @import("../registers.zig");
 const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
@@ -224,6 +225,10 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
         } else if (vector == IoApicInterrupts.Keyboard.get()) {
             log.debug("Received keyboard interrupt, forwarding to PS/2 module", .{});
             ps2.handle();
+            return;
+        } else if (vector == IoApicInterrupts.PitTimer.get()) {
+            log.debug("Received PIT timer interrupt, forwarding to PIT module", .{});
+            pit.handle();
             return;
         }
         log.debug("Received APIC interrupt with vector 0x{x}, sending EOI...", .{vector});
