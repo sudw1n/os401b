@@ -126,11 +126,11 @@ fn init() Error!void {
     }
     const executable_address_response = lib.executable_address_request.response orelse @panic("failed to get executable address response from Limine");
 
-    try term.logStepBegin("Initializing the physical memory manager", .{});
+    try term.logStepBegin("Initializing the Physical Memory Manager", .{});
     pmm.init(memmap, executable_address_response);
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Setting up virtual memory manager and kernel page tables", .{});
+    try term.logStepBegin("Setting up Virtual Memory Manager and Kernel Page Tables", .{});
     vmm_heap.init();
     vmm.init(memmap, executable_address_response);
     try term.logStepEnd(true);
@@ -145,7 +145,7 @@ fn init() Error!void {
     ioapic.init(rsdp_response);
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Initializing keyboard", .{});
+    try term.logStepBegin("Initializing the Keyboard", .{});
     ps2.init();
     try term.logStepEnd(true);
 
