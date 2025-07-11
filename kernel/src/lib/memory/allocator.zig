@@ -118,7 +118,14 @@ pub const Allocator = struct {
             node = hdr.next;
         }
 
+        const header_align = @alignOf(ChunkHeader);
+        // compute how many bytes we need to skip to align the header
+        const adjust_off = std.mem.alignPointerOffset(self.heap.ptr + self.end_index, header_align) orelse return null;
+        log.debug("adjusting end_index by {x} bytes to align header", .{adjust_off});
+        self.end_index += adjust_off;
+
         // typecast the current position to a ChunkHeader pointer
+        log.debug("allocating new chunk at {x:0>16}:{x}", .{ @intFromPtr(self.heap[self.end_index..].ptr), size });
         const hdr_ptr: *ChunkHeader = @ptrCast(@alignCast(self.heap[self.end_index..]));
         // fill in the header information
         hdr_ptr.* = ChunkHeader{
