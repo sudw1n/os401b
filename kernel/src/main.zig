@@ -33,6 +33,8 @@ const Error = lib.Error;
 
 const KERNEL_VERSION = "0.0.1";
 
+const HEAP_SIZE = 0x100000; // 1 MiB
+
 /// Standard Library Options
 pub const std_options = std.Options{
     .log_level = .debug,
@@ -150,6 +152,14 @@ fn init() Error!void {
     try term.logStepBegin("Unmasking IRQ lines", .{});
     ioapic.routeVectors();
     try term.logStepEnd(true);
+
+    try term.logStepBegin("Initializing Heap Allocator", .{});
+    var kernel_allocator = lib.Allocator.init(&vmm.global_vmm, HEAP_SIZE);
+    defer kernel_allocator.deinit();
+    try term.logStepEnd(true);
+
+    const allocator = kernel_allocator.allocator();
+    _ = allocator;
 }
 
 fn welcome() Error!void {
