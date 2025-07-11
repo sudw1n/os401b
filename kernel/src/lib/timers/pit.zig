@@ -34,8 +34,8 @@ pub const TICKS_PER_SEC: u32 = 1000; // 1 ms tick
 pub fn sleep(ms: u32) void {
     const total_ticks_per_sec = std.math.mulWide(u32, ms, TICKS_PER_SEC);
     const wait_ticks = std.math.divCeil(u64, total_ticks_per_sec, std.time.ms_per_s) catch @panic("sleep: division error");
-    const start = @atomicLoad(u64, &pit_ticks, AtomicOrder.seq_cst);
-    while ((@atomicLoad(u64, &pit_ticks, AtomicOrder.seq_cst) - start) < wait_ticks) {
+    const start = pit_ticks;
+    while ((pit_ticks - start) < wait_ticks) {
         // sleep until next timer interrupt arrives and our pit_ticks is incremented
         asm volatile ("hlt");
     }
