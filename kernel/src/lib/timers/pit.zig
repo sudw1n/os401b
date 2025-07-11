@@ -2,15 +2,43 @@
 
 const std = @import("std");
 const cpu = @import("../cpu.zig");
+const lapic = @import("../interrupts/lapic.zig");
 const out = cpu.out;
 const in = cpu.in;
 
-pub const TICKS_PER_SEC: u32 = 1000; // 1 ms tick
+const log = std.log.scoped(.pit);
+
+pub const AtomicOrder = std.builtin.AtomicOrder;
+pub const AtomicRmwOp = std.builtin.AtomicRmwOp;
+
 pub const frequency: u32 = 1193182; // 1.193182 MHz
 
 pub fn init() void {
     const reload = reloadForHz(TICKS_PER_SEC);
     setPeriodic(reload);
+}
+
+pub var pit_ticks: u64 = 0;
+
+// This is the PIT interrupt handler.
+// It is called at every timer interrupt.
+// The PIT is configured in periodic mode, so it will keep generating interrupts at the specified rate.
+// Here, we just increment a global tick counter.
+pub fn handle() void {
+    _ = @atomicRmw(u64, &pit_ticks, AtomicRmwOp.Add, 1, AtomicOrder.seq_cst);
+    log.debug("PIT interrupt fired, total ticks: {}", .{pit_ticks});
+    lapic.global_lapic.sendEoi();
+}
+
+pub const TICKS_PER_SEC: u32 = 1000; // 1 ms tick
+pub fn sleep(ms: u32) void {
+    const total_ticks_per_sec = std.math.mulWide(u32, ms, TICKS_PER_SEC);
+    const wait_ticks = std.math.divCeil(u64, total_ticks_per_sec, std.time.ms_per_s) catch @panic("sleep: division error");
+    const start = @atomicLoad(u64, &pit_ticks, AtomicOrder.seq_cst);
+    while ((@atomicLoad(u64, &pit_ticks, AtomicOrder.seq_cst) - start) < wait_ticks) {
+        // sleep until next timer interrupt arrives and our pit_ticks is incremented
+        asm volatile ("hlt");
+    }
 }
 
 /// Return the initial count needed to generate interrupts at the given rate.
@@ -129,24 +157,6 @@ pub fn readCurrentCount() u16 {
     const lo = in(u8, Port.Channel0.get());
     const hi = in(u8, Port.Channel0.get());
     return (@as(u16, hi) << 8) | @as(u16, lo);
-}
-
-pub fn sleep(ms: u32) void {
-    // get the maximum ms we can wait for in a single cycle
-    const max_ms: u32 = (@as(u32, 0xFFFF) * 1_000) / frequency;
-    var remaining_duration: u32 = ms;
-
-    // loop until we've covered the full duration
-    while (remaining_duration > 0) {
-        const chunk_ms = if (remaining_duration > max_ms) max_ms else remaining_duration;
-
-        // load the PIT and wait for its counter to underflow
-        const count = reloadForMs(chunk_ms);
-        setOneShot(count);
-        while (readCurrentCount() != 0) {}
-
-        remaining_duration -= chunk_ms;
-    }
 }
 
 const ConfigByte = packed struct(u8) {
