@@ -92,6 +92,12 @@ pub const Ps2Driver = struct {
             },
             else => {
                 const raw: u8 = @intFromEnum(event.code);
+                // If Shift is down, try the shifted map first
+                if (Modifier.Shift.check(event.status_mask)) {
+                    if (raw < set1_shift_ascii_map.len and set1_shift_ascii_map[raw] != 0) {
+                        break :blk set1_shift_ascii_map[raw];
+                    }
+                }
                 if (raw < set1_ascii_map.len and set1_ascii_map[raw] != 0) {
                     const c = set1_ascii_map[raw];
                     if (Modifier.CapsLock.check(event.status_mask) or Modifier.Shift.check(event.status_mask)) {
@@ -321,6 +327,34 @@ const set1_ascii_map: [Scancode.fields]u8 = blk: {
     m[@intFromEnum(Scancode.KPadPlus)] = '+';
     m[@intFromEnum(Scancode.KPadDot)] = '.';
 
+    break :blk m;
+};
+
+const set1_shift_ascii_map: [Scancode.fields]u8 = blk: {
+    var m: [Scancode.fields]u8 = undefined;
+    // default everything to 0
+    for (&m) |*slot| slot.* = 0;
+    m[@intFromEnum(Scancode.Digit1)] = '!';
+    m[@intFromEnum(Scancode.Digit2)] = '@';
+    m[@intFromEnum(Scancode.Digit3)] = '#';
+    m[@intFromEnum(Scancode.Digit4)] = '$';
+    m[@intFromEnum(Scancode.Digit5)] = '%';
+    m[@intFromEnum(Scancode.Digit6)] = '^';
+    m[@intFromEnum(Scancode.Digit7)] = '&';
+    m[@intFromEnum(Scancode.Digit8)] = '*';
+    m[@intFromEnum(Scancode.Digit9)] = '(';
+    m[@intFromEnum(Scancode.Digit0)] = ')';
+    m[@intFromEnum(Scancode.Minus)] = '_';
+    m[@intFromEnum(Scancode.Equal)] = '+';
+    m[@intFromEnum(Scancode.LBracket)] = '{';
+    m[@intFromEnum(Scancode.RBracket)] = '}';
+    m[@intFromEnum(Scancode.Semicolon)] = ':';
+    m[@intFromEnum(Scancode.Quote)] = '"';
+    m[@intFromEnum(Scancode.Grave)] = '~';
+    m[@intFromEnum(Scancode.Backslash)] = '|';
+    m[@intFromEnum(Scancode.Comma)] = '<';
+    m[@intFromEnum(Scancode.Dot)] = '>';
+    m[@intFromEnum(Scancode.Slash)] = '?';
     break :blk m;
 };
 
