@@ -15,7 +15,6 @@ const pmm = lib.pmm;
 const paging = lib.paging;
 const vmm_heap = lib.vmm_heap;
 const vmm = lib.vmm;
-const allocator = lib.allocator;
 
 const acpi = lib.acpi;
 
