@@ -147,10 +147,6 @@ fn init() Error!void {
     ps2.init();
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Initializing timers", .{});
-    pit.setPeriodic(pit.reloadForMs(100));
-    try term.logStepEnd(true);
-
     try term.logStepBegin("Unmasking IRQ lines", .{});
     ioapic.routeVectors();
     try term.logStepEnd(true);
