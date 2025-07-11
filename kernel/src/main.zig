@@ -63,6 +63,10 @@ pub const std_options = std.Options{
             .scope = .idt,
             .level = .info,
         },
+        .{
+            .scope = .pit,
+            .level = .info,
+        },
     },
     .logFn = serial.log,
 };
