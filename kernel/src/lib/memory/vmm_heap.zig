@@ -5,8 +5,10 @@ const paging = @import("paging.zig");
 
 var fba: ?std.heap.FixedBufferAllocator = null;
 
-/// Heap size for the VMM objects
-pub const HEAP_SIZE: usize = 0x4000; // 16 KiB
+/// Heap size for the Kernel VMM objects.
+///
+/// Might also contain the PML4 table for the kernel VMM.
+pub const HEAP_SIZE: usize = 0x10000; // 64 KiB
 
 pub fn init() void {
     const frame = pmm.global_pmm.alloc(HEAP_SIZE);
