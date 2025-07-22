@@ -86,6 +86,15 @@ pub inline fn out(comptime T: type, port: u16, data: T) void {
     }
 }
 
+pub inline fn invlpg(addr: u64) void {
+    asm volatile (
+        \\ invlpg (%[page])
+        :
+        : [page] "r" (addr),
+        : "memory"
+    );
+}
+
 pub inline fn rdtsc() u64 {
     var high: u32 = 0;
     var low: u32 = 0;
