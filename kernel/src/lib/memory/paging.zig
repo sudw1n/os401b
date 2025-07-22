@@ -1,6 +1,7 @@
 const std = @import("std");
 const limine = @import("limine");
 const build_options = @import("build_options");
+const cpu = @import("../cpu.zig");
 const registers = @import("../registers.zig");
 const pmm = @import("pmm.zig");
 
@@ -146,15 +147,6 @@ pub const PageTable = struct {
         const virt_addr = physToVirt(@intFromPtr(frame.ptr));
         const ptr = @as([*]u8, @ptrFromInt(virt_addr))[0..frame.len];
         const table = @as(*PageTable, @ptrCast(@alignCast(ptr)));
-        for (&table.entries) |*entry| {
-            entry.* = PageTableEntry.init(0, &.{});
-        }
-        return table;
-    }
-
-    pub fn initAlloc(allocator: std.mem.Allocator) !*PageTable {
-        const table = try allocator.create(PageTable);
-        // Zero out the entries.
         for (&table.entries) |*entry| {
             entry.* = PageTableEntry.init(0, &.{});
         }
