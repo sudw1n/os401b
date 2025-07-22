@@ -1,5 +1,6 @@
 const std = @import("std");
 const pmm = @import("pmm.zig");
+const paging = @import("paging.zig");
 const vmm = @import("vmm.zig");
 
 const log = std.log.scoped(.heap);
@@ -17,7 +18,7 @@ pub fn allocator() std.mem.Allocator {
 const VirtualMemoryManager = vmm.VirtualMemoryManager;
 
 pub const Allocator = struct {
-    vmm: *VirtualMemoryManager,
+    vmm: ?*VirtualMemoryManager,
     heap: []u8,
     end_index: usize,
     remaining: usize,
@@ -36,6 +37,9 @@ pub const Allocator = struct {
 
     const Self = @This();
 
+    /// Initialize an Allocator with the given VMM and initial size
+    ///
+    /// The allocator will use the given VMM instance to expand the heap
     pub fn init(vmm_instance: *VirtualMemoryManager, initial_size: u64) Self {
         const heap = vmm_instance.alloc(initial_size, &.{.Write}, null) catch |err| {
             log.err("Failed initializing heap allocator: {}", .{err});
@@ -50,10 +54,26 @@ pub const Allocator = struct {
         };
     }
 
+    /// Initialize an Allocator with a fixed buffer for its underlying memory.
+    ///
+    /// If the buffer was allocated, the caller has to handle its deallocation.
+    ///
+    /// The allocator will not have an underlying VMM instance, and thus not expand the buffer.
+    pub fn initFixed(heap: []u8) Self {
+        log.info("Heap allocator initialized at {x:0>16}:{x}", .{ @intFromPtr(heap.ptr), heap.len });
+        log.warn("This allocator isn't given a VMM instance, and thus it will not expand the heap when needed", .{});
+        return Self{
+            .vmm = null,
+            .heap = heap,
+            .end_index = 0,
+            .remaining = heap.len,
+        };
+    }
+
     pub fn deinit(self: *Self) void {
         self.end_index = 0;
         self.remaining = 0;
-        vmm.global_vmm.free(self.heap);
+        if (self.vmm) |v| v.free(self.heap);
     }
 
     pub fn allocator(self: *Self) std.mem.Allocator {
@@ -217,17 +237,20 @@ pub const Allocator = struct {
     // The virtual address range of the heap remains contiguous even though the expanded slice may
     // be in a different physical memory location.
     fn expand(self: *Self) ?void {
+        // we expand only if we have an underlying VMM instance
+        const v = self.vmm orelse return null;
+
         // either we expand by 4KB or double the size of the heap
         const expansion_size = @max(self.heap.len, 0x1000); // at least 4KB
         const new_heap_size = self.heap.len + expansion_size;
 
-        const new_heap = self.vmm.alloc(new_heap_size, &.{.Write}, null) catch |err| {
+        const new_heap = v.alloc(new_heap_size, &.{.Write}, null) catch |err| {
             log.err("Failed to expand heap: {}", .{err});
             return null;
         };
         @memcpy(new_heap[0..self.heap.len], self.heap);
         // free the old heap memory
-        self.vmm.free(self.heap);
+        v.free(self.heap);
         self.heap = new_heap;
         self.remaining += expansion_size;
 
