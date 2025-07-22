@@ -5,19 +5,16 @@ const paging = @import("paging.zig");
 
 var fba: ?std.heap.FixedBufferAllocator = null;
 
-/// Heap size for the Kernel VMM objects.
-///
-/// Might also contain the PML4 table for the kernel VMM.
-pub const HEAP_SIZE: usize = 0x10000; // 64 KiB
-
 pub fn init() void {
-    const frame = pmm.global_pmm.alloc(HEAP_SIZE);
+    // Heap size for the Kernel VMM objects.
+    const vmm_heap_size: usize = 0x10000; // 64 KiB
+    const frame = pmm.global_pmm.alloc(vmm_heap_size);
     const virt = paging.physToVirt(@intFromPtr(frame.ptr));
     const heap = @as([*]u8, @ptrFromInt(virt))[0..frame.len];
     for (heap) |*byte| {
         byte.* = 0; // Initialize the heap memory to zero
     }
-    std.log.debug("Heap initialized at virtual address: {x:0>16}, size: {d}", .{ @intFromPtr(heap.ptr), heap.len });
+    std.log.debug("VMM Heap initialized at virtual address: {x:0>16}, size: {d}", .{ @intFromPtr(heap.ptr), heap.len });
     fba = std.heap.FixedBufferAllocator.init(heap);
 }
 
