@@ -136,17 +136,21 @@ pub const PageTable = struct {
 
     pub const Error = pmm.PhysicalMemoryManager.Error;
 
-    /// Allocate a page table
+    /// Initialize a page table with zeroed entries.
+    ///
+    /// Should only be used for the kernel PML4.
+    /// Other page tables should be initialized with their respective VMMs.
     pub fn init() *PageTable {
         // Allocate a 4096-byte block for the page table.
         const frame = pmm.global_pmm.alloc(@sizeOf(PageTable));
         const virt_addr = physToVirt(@intFromPtr(frame.ptr));
         const ptr = @as([*]u8, @ptrFromInt(virt_addr))[0..frame.len];
-        return @as(*PageTable, @ptrCast(@alignCast(ptr)));
+        const table = @as(*PageTable, @ptrCast(@alignCast(ptr)));
+        for (&table.entries) |*entry| {
+            entry.* = PageTableEntry.init(0, &.{});
+        }
+        return table;
     }
-    /// Initialize a page table with zeroed entries.
-    pub fn initZero() *PageTable {
-        const table = PageTable.init();
         for (&table.entries) |*entry| {
             entry.* = PageTableEntry.init(0, &.{});
         }
@@ -225,7 +229,7 @@ pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: u64) void {
     log.debug("PML4 Entry at index {d}: {x:0>16}", .{ pml4_index, pml4_entry.getFrameAddress() });
     if (!pml4_entry.checkFlag(.Present)) {
         log.debug("  PML4 Entry not present. Creating new PDPT...", .{});
-        pdpt = PDPT.initZero();
+        pdpt = PDPT.init();
         pml4_entry.* = PageTableEntry.init(virtToPhys(@intFromPtr(pdpt)), &.{ .Present, .Writable });
         log.debug("  New PDPT created at: {x:0>16}", .{@intFromPtr(pdpt)});
     } else {
@@ -240,7 +244,7 @@ pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: u64) void {
     log.debug("PDPT Entry at index {d}: {x:0>16}", .{ pdpt_index, pdpt_entry.getFrameAddress() });
     if (!pdpt_entry.checkFlag(.Present)) {
         log.debug("  PDPT Entry not present. Creating new PD...", .{});
-        pd = PageDirectory.initZero();
+        pd = PageDirectory.init();
         pdpt_entry.* = PageTableEntry.init(virtToPhys(@intFromPtr(pd)), &.{ .Present, .Writable });
         log.debug("  New PD created at: {x:0>16}", .{@intFromPtr(pd)});
     } else {
@@ -254,7 +258,7 @@ pub fn mapPage(pml4: *PML4, virt: u64, phys: u64, flags: u64) void {
     log.debug("PD Entry at index {d}: {x:0>16}", .{ pd_index, pd_entry.getFrameAddress() });
     if (!pd_entry.checkFlag(.Present)) {
         log.debug("  PD Entry not present. Creating new PT...", .{});
-        pt = PT.initZero();
+        pt = PT.init();
         pd_entry.* = PageTableEntry.init(virtToPhys(@intFromPtr(pt)), &.{ .Present, .Writable });
         log.debug("  New PT created at: {x:0>16}", .{@intFromPtr(pt)});
     } else {
