@@ -13,11 +13,9 @@ const PageTableEntryFlag = paging.PageTableEntryFlag;
 pub var global_vmm: VirtualMemoryManager = undefined;
 
 pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
-    // we initialize it this way because we never deallocate the kernel PML4
-    const pt_root = paging.PageTable.init();
     const allocator = heap.allocator();
     const virt_base = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
-    global_vmm = VirtualMemoryManager.init(pt_root, virt_base, allocator);
+    global_vmm = VirtualMemoryManager.init(virt_base, allocator);
 
     // map physical frames
     const entries = memory_map.getEntries();
@@ -80,7 +78,8 @@ pub const VirtualMemoryManager = struct {
         OverlappingRegion,
     } || std.mem.Allocator.Error;
 
-    pub fn init(pml4: *paging.PML4, virt_base: u64, allocator: std.mem.Allocator) VirtualMemoryManager {
+    pub fn init(virt_base: u64, allocator: std.mem.Allocator) VirtualMemoryManager {
+        const pml4 = paging.PML4.init();
         log.debug("Initializing VirtualMemoryManager with PML4 at {x:0>16}, virt_base {x:0>16}", .{ @intFromPtr(pml4), virt_base });
         return VirtualMemoryManager{
             .pt_root = pml4,
@@ -107,6 +106,7 @@ pub const VirtualMemoryManager = struct {
 
             current = next;
         }
+        self.pt_root.deinit();
     }
 
     /// Allocate virtual memory of the given size with the given flags.
