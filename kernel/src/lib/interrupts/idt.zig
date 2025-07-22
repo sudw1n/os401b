@@ -216,21 +216,23 @@ export fn interruptCommon() callconv(.Naked) void {
 
 export fn interruptDispatch(frame: *InterruptFrame) void {
     const vector: u8 = @intCast(frame.vector_number);
-    // We need to send EOI for APIC interrupts
-    if (LApicInterrupts.is(vector) or IoApicInterrupts.is(vector)) {
-        // but the spurious vector should be ignored
-        if (vector == LApicInterrupts.Spurious.get()) {
+    switch (vector) {
+        LApicInterrupts.Spurious.get() => {
             log.debug("Received spurious interrupt, ignoring...", .{});
-            return;
-        } else if (vector == IoApicInterrupts.Keyboard.get()) {
+        },
+        IoApicInterrupts.Keyboard.get() => {
             log.debug("Received keyboard interrupt, forwarding to PS/2 module", .{});
             ps2.handle();
             return;
-        } else if (vector == IoApicInterrupts.PitTimer.get()) {
+        },
+        IoApicInterrupts.PitTimer.get() => {
             log.debug("Received PIT timer interrupt, forwarding to PIT module", .{});
             pit.handle();
-            return;
-        }
+        },
+        else => {},
+    }
+    // need to send EOI for APIC interrupts
+    if (LApicInterrupts.is(vector) or IoApicInterrupts.is(vector)) {
         log.debug("Received APIC interrupt with vector 0x{x}, sending EOI...", .{vector});
         lapic.global_lapic.sendEoi();
         return;
