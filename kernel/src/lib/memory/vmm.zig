@@ -90,10 +90,23 @@ pub const VirtualMemoryManager = struct {
         };
     }
 
-    // TODO: complete this. we should also deallocate all the VmObject nodes in the linked list
     pub fn deinit(self: *VirtualMemoryManager) void {
-        // Free the page table root
-        self.pt_root.deinit();
+        var current: ?*VmObject = self.vm_objects;
+        self.vm_objects = null;
+        while (current) |obj| {
+            const next = obj.next;
+            const start = @intFromPtr(obj.region.ptr);
+
+            // unmap
+            paging.unmapRange(self.pt_root, start, obj.region.len);
+            // free the physical pages
+            const phys_slice = @as([*]u8, @ptrFromInt(obj.phys_addr))[0..obj.region.len];
+            pmm.global_pmm.free(phys_slice);
+            // destroy the node
+            self.allocator.destroy(obj);
+
+            current = next;
+        }
     }
 
     /// Allocate virtual memory of the given size with the given flags.
