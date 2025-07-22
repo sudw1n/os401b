@@ -44,9 +44,6 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
 ///
 /// There should be only one instance of this manager in the system.
 pub const PhysicalMemoryManager = struct {
-    pub const Error = error{
-        DoubleFree,
-    };
     // In our bitmap, each bit represents a page:
     //   0 -> reserved, 1 -> free
     free_bitmap: Bitmap,
@@ -159,7 +156,7 @@ pub const PhysicalMemoryManager = struct {
     /// Deallocate the given physical page address.
     ///
     /// Returns Error if the page is already free (double-free).
-    pub fn free(self: *PhysicalMemoryManager, bytes: []u8) Error!void {
+    pub fn free(self: *PhysicalMemoryManager, bytes: []u8) void {
         const size = bytes.len;
         const pages = addressToPage(size);
         const address = @intFromPtr(bytes.ptr);
@@ -170,7 +167,8 @@ pub const PhysicalMemoryManager = struct {
         for (startPage..endPage) |i| {
             if (self.free_bitmap.isSet(i)) {
                 @branchHint(.unlikely);
-                return Error.DoubleFree;
+                log.err("Double free detected at page {x}, when freeing {x:0>16}:{x}", .{ i, @intFromPtr(bytes.ptr), bytes.len });
+                @panic("Double free detected in PMM");
             }
         }
         self.free_bitmap.setRangeValue(.{ .start = startPage, .end = endPage }, true);
