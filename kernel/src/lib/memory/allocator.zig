@@ -4,6 +4,16 @@ const vmm = @import("vmm.zig");
 
 const log = std.log.scoped(.heap);
 
+pub var global_allocator: Allocator = undefined;
+
+pub fn init(size: u64) void {
+    global_allocator = Allocator.init(&vmm.global_vmm, size);
+}
+
+pub fn allocator() std.mem.Allocator {
+    return global_allocator.allocator();
+}
+
 const VirtualMemoryManager = vmm.VirtualMemoryManager;
 
 pub const Allocator = struct {

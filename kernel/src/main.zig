@@ -163,13 +163,13 @@ fn init() Error!void {
     ioapic.routeVectors();
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Initializing Heap Allocator", .{});
-    var kernel_allocator = lib.Allocator.init(&vmm.global_vmm, HEAP_SIZE);
-    defer kernel_allocator.deinit();
+    try term.logStepBegin("Initializing the Kernel Heap Allocator", .{});
+    lib.allocator.init(HEAP_SIZE);
+    defer lib.allocator.global_allocator.deinit();
     try term.logStepEnd(true);
 
-    const allocator = kernel_allocator.allocator();
-    _ = allocator;
+    const kernel_allocator = lib.allocator.allocator();
+    _ = kernel_allocator;
 }
 
 fn welcome() Error!void {
