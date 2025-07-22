@@ -13,7 +13,8 @@ const PageTableEntryFlag = paging.PageTableEntryFlag;
 pub var global_vmm: VirtualMemoryManager = undefined;
 
 pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
-    const pt_root = paging.PageTable.initZero();
+    // we initialize it this way because we never deallocate the kernel PML4
+    const pt_root = paging.PageTable.init();
     const allocator = heap.allocator();
     const virt_base = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
     global_vmm = VirtualMemoryManager.init(pt_root, virt_base, allocator);
@@ -80,6 +81,7 @@ pub const VirtualMemoryManager = struct {
     } || std.mem.Allocator.Error;
 
     pub fn init(pml4: *paging.PML4, virt_base: u64, allocator: std.mem.Allocator) VirtualMemoryManager {
+        log.debug("Initializing VirtualMemoryManager with PML4 at {x:0>16}, virt_base {x:0>16}", .{ @intFromPtr(pml4), virt_base });
         return VirtualMemoryManager{
             .pt_root = pml4,
             .virt_base = virt_base,
