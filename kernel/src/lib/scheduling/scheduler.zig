@@ -1,11 +1,17 @@
 const std = @import("std");
+const registers = @import("../registers.zig");
 const idt = @import("../interrupts/idt.zig");
+const pmm = @import("../memory/pmm.zig");
+const paging = @import("../memory/paging.zig");
 const vmm = @import("../memory/vmm.zig");
-const vmm_heap = @import("../memory/vmm_heap.zig");
+const heap_allocator = @import("../memory/allocator.zig");
 const gdt = @import("../gdt.zig");
+
+const log = std.log.scoped(.scheduler);
 
 const VirtualMemoryManager = vmm.VirtualMemoryManager;
 const SegmentSelector = gdt.SegmentSelector;
+const Allocator = heap_allocator.Allocator;
 
 pub const CpuContext = idt.InterruptFrame;
 
@@ -33,6 +39,7 @@ pub const Scheduler = struct {
         p.next = p; // circular list
         p.state = .Running;
         return Scheduler{
+            .allocator = allocator,
             .first = p,
             .current = p,
         };
@@ -40,19 +47,14 @@ pub const Scheduler = struct {
 
     pub fn createProcess(self: *Scheduler, name: [PROCESS_NAME_MAX_LEN:0]u8, function: *const (fn (*anyopaque) void), arg: *anyopaque) !*Process {
         // allocate a new process
-        const pml4 = try vmm.createPML4(self.allocator);
         const p = try self.allocator.create(Process);
-        p.vmm = VirtualMemoryManager.init(pml4: *paging.PML4, virt_base: u64, allocator: std.mem.Allocator)
-        @memcpy(p.name, name);
-        p.pid = blk: {
+        const pid = blk: {
             const pid = self.next_pid;
             self.next_pid += 1;
             break :blk pid;
         };
-        p.state = .Ready;
-        p.context.ss = SegmentSelector.KernelData;
-        p.
-            return p;
+        p.init(name, pid, State.Ready, function, arg);
+        return p;
     }
 
     /// Heart of the scheduler: save the old context, pick the next READY,
@@ -72,6 +74,8 @@ pub const Scheduler = struct {
         // mark the non-dead process as running
         candidate.state = .Running;
         self.current = candidate;
+        // load the new process's page tables
+        candidate.vmm.activate();
         return candidate.context;
     }
 
@@ -80,16 +84,20 @@ pub const Scheduler = struct {
         p.next = self.first.next;
         self.first.next = p;
     }
+
     /// Remove `p` from the ring. Must not be the only element.
     pub fn deleteProcess(self: *Scheduler, p: *Process) void {
-        var prev: *Process = self.first;
-        // find the node just before `p`
-        while (prev.next != p) : (prev = prev.next) {}
-        prev.next = p.next;
         if (p == self.first) {
             // if we removed the first process, we need to update the first pointer
             self.first = p.next;
+        } else {
+            var prev: *Process = self.first;
+            // find the node just before `p`
+            while (prev.next != p) : (prev = prev.next) {}
+            prev.next = p.next;
         }
+        // clean up the process resources
+        p.deinit();
     }
 };
 
