@@ -136,11 +136,6 @@ pub const VirtualMemoryManager = struct {
 
         // allocate and link in the new VmObject
         const obj = try self.allocator.create(VmObject);
-        obj.* = VmObject{
-            .region = @as([*]u8, @ptrFromInt(found_base))[0..length],
-            .flags = VmObjectFlag.asRaw(flags),
-            .next = current,
-        };
         if (prev) |p| {
             p.next = obj;
         } else {
@@ -160,6 +155,13 @@ pub const VirtualMemoryManager = struct {
             // allocation shouldn't have a different length
             std.debug.assert(p.len == length);
             break :blk @intFromPtr(p.ptr);
+        };
+
+        obj.* = VmObject{
+            .phys_addr = phys_addr,
+            .region = @as([*]u8, @ptrFromInt(found_base))[0..length],
+            .flags = VmObjectFlag.asRaw(flags),
+            .next = current,
         };
 
         // here we use the flags translated into page table entry flags since our VMM will use
@@ -242,11 +244,6 @@ pub const VirtualMemoryManager = struct {
 
         const raw_flags = VmObjectFlag.asRaw(flags);
         const obj = try self.allocator.create(VmObject);
-        obj.* = VmObject{
-            .region = virt,
-            .flags = raw_flags,
-            .next = curr,
-        };
 
         if (prev) |p| {
             p.next = obj;
@@ -267,6 +264,13 @@ pub const VirtualMemoryManager = struct {
             break :blk @intFromPtr(p.ptr);
         };
         log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ start, len, phys_addr, flags });
+
+        obj.* = VmObject{
+            .phys_addr = phys_addr,
+            .region = virt,
+            .flags = raw_flags,
+            .next = curr,
+        };
 
         paging.mapRange(self.pt_root, start, phys_addr, len, entry_flags);
 
@@ -333,6 +337,7 @@ pub const VirtualMemoryManager = struct {
 };
 
 const VmObject = struct {
+    phys_addr: u64,
     region: []u8,
     flags: u64,
     next: ?*VmObject,
