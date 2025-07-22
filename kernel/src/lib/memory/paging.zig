@@ -151,11 +151,16 @@ pub const PageTable = struct {
         }
         return table;
     }
+
+    pub fn initAlloc(allocator: std.mem.Allocator) !*PageTable {
+        const table = try allocator.create(PageTable);
+        // Zero out the entries.
         for (&table.entries) |*entry| {
             entry.* = PageTableEntry.init(0, &.{});
         }
         return table;
     }
+
     pub fn deinit(self: *PageTable) Error!void {
         // we need to give the physical address of ourselves to the PMM
         const phys_ptr: [*]u8 = @ptrFromInt(virtToPhys(@intFromPtr(self)));
@@ -163,6 +168,7 @@ pub const PageTable = struct {
         const len = @sizeOf(PageTable);
         try pmm.global_pmm.free(phys_ptr[0..len]);
     }
+
     pub fn isEmpty(self: *PageTable) bool {
         // Check if all entries are zero (not mapped).
         for (self.entries) |entry| {
