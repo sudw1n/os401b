@@ -47,8 +47,6 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     }
 
     mapOwn(executable_address_response);
-
-    global_vmm.switchTo();
 }
 
 // TODO:
@@ -73,6 +71,7 @@ pub const VirtualMemoryManager = struct {
     virt_base: u64,
     /// A linked list of VM objects that have been allocated to that address space
     vm_objects: ?*VmObject,
+    /// Allocator for the VM objects
     allocator: std.mem.Allocator,
 
     pub const Error = error{

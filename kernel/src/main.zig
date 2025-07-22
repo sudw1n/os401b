@@ -137,6 +137,8 @@ fn init() Error!void {
     try term.logStepBegin("Setting up Virtual Memory Manager and Kernel Page Tables", .{});
     vmm_heap.init();
     vmm.init(memmap, executable_address_response);
+    // switch to the kernel's newly setup PML4
+    vmm.global_vmm.switchTo();
     try term.logStepEnd(true);
 
     const rsdp_response = lib.rsdp_request.response orelse @panic("failed to get RSDP response from Limine");
