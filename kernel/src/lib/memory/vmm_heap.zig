@@ -3,6 +3,8 @@ const build_options = @import("build_options");
 const pmm = @import("pmm.zig");
 const paging = @import("paging.zig");
 
+const log = std.log.scoped(.vmm_heap);
+
 var fba: ?std.heap.FixedBufferAllocator = null;
 
 pub fn init() void {
@@ -14,7 +16,7 @@ pub fn init() void {
     for (heap) |*byte| {
         byte.* = 0; // Initialize the heap memory to zero
     }
-    std.log.debug("VMM Heap initialized at virtual address: {x:0>16}, size: {d}", .{ @intFromPtr(heap.ptr), heap.len });
+    log.info("Heap initialized at virtual address: {x:0>16}, size: {d}", .{ @intFromPtr(heap.ptr), heap.len });
     fba = std.heap.FixedBufferAllocator.init(heap);
 }
 
