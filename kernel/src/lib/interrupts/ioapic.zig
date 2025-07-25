@@ -109,10 +109,10 @@ pub const IoApic = struct {
         // I/O APIC redirection table.
         const idx = pin - self.gsi_base;
 
-        if (idx >= self.redirCount()) {
+        const redir_count = self.redirCount();
+        if (idx >= redir_count) {
             @branchHint(.unlikely);
-            log.err("I/O APIC redirection index {d} out of bounds", .{idx});
-            return;
+            log.err("I/O APIC redirection index {d} out of bounds, count = {d}", .{ idx, redir_count });
         }
 
         const base = @intFromEnum(Registers.RedirectionTableBase);
@@ -125,6 +125,9 @@ pub const IoApic = struct {
         // mean position 24)
         const high_dword = @as(u32, dest_apic) << 24;
         self.write(u32, high_index, high_dword);
+        log.debug("I/O APIC programmed pin {d} with vector {x} and destination APIC ID {x:0>2}", .{
+            pin, lvt.vector, dest_apic,
+        });
     }
 
     /// How many redirection entries this I/O APIC supports
