@@ -103,7 +103,10 @@ pub fn kmain() Error!void {
 
     // spawn a shell
     log.info("spawning the shell", .{});
-    try shell();
+    shell() catch |err| {
+        log.err("shell returned error: {}", .{err});
+        @panic("shell errored out");
+    };
 }
 
 fn init() Error!void {
@@ -146,13 +149,17 @@ fn init() Error!void {
         @panic("RSDP address is null");
     }
 
+    try term.logStepBegin("Initializing the Kernel Heap Allocator", .{});
+    lib.allocator.init(HEAP_SIZE);
+    try term.logStepEnd(true);
+
     try term.logStepBegin("Initializing APICs", .{});
     lapic.init();
     ioapic.init(rsdp_response);
     try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing the Keyboard", .{});
-    ps2.init();
+    ps2.init(lib.allocator.allocator());
     try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing the PIT Timer", .{});
@@ -162,14 +169,6 @@ fn init() Error!void {
     try term.logStepBegin("Unmasking IRQ lines", .{});
     ioapic.routeVectors();
     try term.logStepEnd(true);
-
-    try term.logStepBegin("Initializing the Kernel Heap Allocator", .{});
-    lib.allocator.init(HEAP_SIZE);
-    defer lib.allocator.global_allocator.deinit();
-    try term.logStepEnd(true);
-
-    const kernel_allocator = lib.allocator.allocator();
-    _ = kernel_allocator;
 }
 
 fn welcome() Error!void {
@@ -180,4 +179,35 @@ fn welcome() Error!void {
 // dummy shell for now
 fn shell() Error!void {
     try term.colorPrint(lib.Color.BrightRed, "$ ", .{});
+    const target_input = "start";
+    var buffer: [target_input.len + 1]u8 = undefined;
+    var input_count: usize = 0;
+    while (true) {
+        const c = ps2.ps2_driver.getChar() orelse {
+            asm volatile ("pause");
+            continue;
+        };
+        try term.print("{c}", .{c});
+        if (c == '\n') {
+            // end of input, check if it matches the target input
+            buffer[input_count] = 0; // null-terminate the string
+            if (std.mem.eql(u8, buffer[0..input_count], target_input)) {
+                try term.print("\nStarting scheduler...\n", .{});
+                break; // exit the loop to start the process
+            } else {
+                try term.print("Unknown command: ", .{});
+                try term.print("{s}", .{buffer[0..input_count]});
+                try term.print("\n", .{});
+            }
+            input_count = 0; // reset input count for next command
+            try term.colorPrint(lib.Color.BrightRed, "$ ", .{});
+        } else if (c == '\x0E' and input_count > 0) {
+            // handle backspace
+            input_count -= 1;
+        } else if (input_count < target_input.len) {
+            // store character in buffer
+            buffer[input_count] = c;
+            input_count += 1;
+        }
+    }
 }
