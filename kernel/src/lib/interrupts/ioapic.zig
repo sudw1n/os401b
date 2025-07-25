@@ -109,8 +109,7 @@ pub const IoApic = struct {
         // I/O APIC redirection table.
         const idx = pin - self.gsi_base;
 
-        const redir_count = self.redirCount();
-        if (idx >= redir_count) {
+        if (idx > self.redirCount()) {
             @branchHint(.unlikely);
             log.err("I/O APIC redirection index {d} out of bounds, count = {d}", .{ idx, redir_count });
         }
