@@ -51,6 +51,18 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     global_vmm.switchTo();
 }
 
+// TODO:
+// 1. Get physical address of a virtual address.
+//    We would first need to make sure there is a VMObject that covers the virtual address, and then we
+//    can walk the page tables in software. We could probably also do the reverse by tracking the
+//    physical address as a field in VmObject. If a physical address is provided, we can just search
+//    for a region that contains it in our VmObjects linked list. The window of the region would be
+//    given by the slice of the virtual address since the length is the same in both (virtual and
+//    physical) cases.
+// 2. Implement a complete deinit(). We will probably again need to track the physical address so as
+//    to be able to free the physical pages with PMM.
+// 3. Copying data between two separate virtual address spaces (VMM instances).
+
 /// Manages the virtual address spaces of processes and the kernel.
 ///
 /// There can be more than one instance of this manager. The kernel will have its own instance.
