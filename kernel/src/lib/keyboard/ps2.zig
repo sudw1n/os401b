@@ -7,16 +7,20 @@ const log = std.log.scoped(.ps2);
 const out = cpu.out;
 const in = cpu.in;
 
-var ps2_driver: Ps2Driver = undefined;
+pub var ps2_driver: *Ps2Driver = undefined;
 
-pub fn init() void {
+pub fn init(allocator: std.mem.Allocator) void {
     log.debug("Force enabling PS/2 scancode translation", .{});
     enableTranslation();
 
     // keyboardUseSet(SET);
     flushOutputBuffer();
 
-    ps2_driver = Ps2Driver.init();
+    ps2_driver = allocator.create(Ps2Driver) catch |err| {
+        log.err("Failed to allocate PS/2 keyboard driver: {}", .{err});
+        @panic("PS/2 keyboard driver allocation failed");
+    };
+    ps2_driver.init(allocator);
 
     log.info("Initialized PS/2 keyboard", .{});
 }
@@ -30,14 +34,16 @@ pub fn handle() void {
 }
 
 pub const Ps2Driver = struct {
+    allocator: std.mem.Allocator,
     /// A circular buffer to store the scancodes
-    buffer: [max_buffer_size]KeyEvent,
-    /// The current position in the buffer
+    buffer: []KeyEvent,
     buf_position: usize,
     /// To handle multi-byte scancodes, we implement a simple state machine.
     /// This holds the current state of the state machine.
     current_state: State,
     current_modifiers: u8 = Modifier.None.asInt(),
+
+    const ring_len = 255;
 
     const State = enum {
         /// The normal state, where we expect to receive a single byte
@@ -48,17 +54,24 @@ pub const Ps2Driver = struct {
         Prefix,
     };
 
-    const max_buffer_size = 256;
-
-    pub fn init() Ps2Driver {
-        return Ps2Driver{
-            .buffer = undefined,
+    pub fn init(self: *Ps2Driver, allocator: std.mem.Allocator) void {
+        const buffer = allocator.alloc(KeyEvent, ring_len) catch |err| {
+            log.err("Failed to allocate PS/2 keyboard buffer: {}", .{err});
+            @panic("PS/2 keyboard buffer allocation failed");
+        };
+        self.* = Ps2Driver{
+            .allocator = allocator,
+            .buffer = buffer,
             .buf_position = 0,
             .current_state = .Normal,
         };
     }
 
-    fn processScancode(self: *Ps2Driver, code: u8) void {
+    pub fn deinit(self: *Ps2Driver) void {
+        self.allocator.free(self.buffer);
+        self.allocator.destroy(self);
+    }
+    pub fn processScancode(self: *Ps2Driver, code: u8) void {
         if (code == 0xE0) {
             // this is a prefix byte, so we go to the prefix state
             log.debug("Prefix byte received, going to Prefix state", .{});
@@ -68,10 +81,8 @@ pub const Ps2Driver = struct {
 
         const maybe_event = self.getKeyEvent(code);
         if (maybe_event) |event| {
-            // Only non‐modifier events should be enqueued into the buffer
             self.buffer[self.buf_position] = event;
-            self.buf_position = (self.buf_position + 1) % max_buffer_size;
-            if (event.type == .Make) displayKeyEvent(event);
+            self.buf_position = (self.buf_position + 1) % ring_len;
         }
         if (self.current_state == .Prefix) {
             // if we were in the prefix state, we go back to the normal state
