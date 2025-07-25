@@ -10,12 +10,15 @@ const log = std.log.scoped(.vmm);
 
 const PageTableEntryFlag = paging.PageTableEntryFlag;
 
+/// The kernel VMM.
+///
+/// Note: this shouldn't be deinitialized.
 pub var global_vmm: VirtualMemoryManager = undefined;
 
 pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
     const allocator = heap.allocator();
-    const virt_base = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
-    global_vmm = VirtualMemoryManager.init(virt_base, allocator);
+    const virt_start = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
+    global_vmm = VirtualMemoryManager.init(virt_start, null, allocator);
 
     // map physical frames
     const entries = memory_map.getEntries();
@@ -66,8 +69,10 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
 pub const VirtualMemoryManager = struct {
     /// Page table root for the virtual address space
     pt_root: *paging.PML4,
-    /// Initial base address for the virtual address space
-    virt_base: u64,
+    /// Starting address for the virtual address space
+    virt_start: u64,
+    /// Ending address for the virtual address space
+    virt_end: ?u64,
     /// A linked list of VM objects that have been allocated to that address space
     vm_objects: ?*VmObject,
     /// Allocator for the VM objects
@@ -78,12 +83,13 @@ pub const VirtualMemoryManager = struct {
         OverlappingRegion,
     } || std.mem.Allocator.Error;
 
-    pub fn init(virt_base: u64, allocator: std.mem.Allocator) VirtualMemoryManager {
+    pub fn init(virt_start: u64, virt_end: ?u64, allocator: std.mem.Allocator) VirtualMemoryManager {
         const pml4 = paging.PML4.init();
-        log.debug("Initializing VirtualMemoryManager with PML4 at {x:0>16}, virt_base {x:0>16}", .{ @intFromPtr(pml4), virt_base });
+        log.debug("Initializing VirtualMemoryManager with PML4 at {x:0>16}, virt_base {x:0>16}", .{ @intFromPtr(pml4), virt_start });
         return VirtualMemoryManager{
             .pt_root = pml4,
-            .virt_base = virt_base,
+            .virt_start = virt_start,
+            .virt_end = virt_end,
             .vm_objects = null,
             .allocator = allocator,
         };
@@ -97,12 +103,11 @@ pub const VirtualMemoryManager = struct {
             const start = @intFromPtr(obj.region.ptr);
 
             // unmap
+            log.debug("Unmapping region {x:0>16}:{x}", .{ start, obj.region.len });
             paging.unmapRange(self.pt_root, start, obj.region.len);
-            // free the physical pages
-            const phys_slice = @as([*]u8, @ptrFromInt(obj.phys_addr))[0..obj.region.len];
-            pmm.global_pmm.free(phys_slice);
             // destroy the node
-            self.allocator.destroy(obj);
+            log.debug("Destroying VmObject at {x:0>16}:{x}", .{ @intFromPtr(&obj), obj.region.len });
+            self.allocator.destroy(&obj);
 
             current = next;
         }
@@ -125,7 +130,7 @@ pub const VirtualMemoryManager = struct {
         var found_base: u64 = 0;
         while (current) |vm| {
             // end of the previous region (or virt_base is none yet)
-            const prev_end = if (prev) |p| @intFromPtr(p.region.ptr) + p.region.len else self.virt_base;
+            const prev_end = if (prev) |p| @intFromPtr(p.region.ptr) + p.region.len else self.virt_start;
             const next_start = @intFromPtr(vm.region.ptr);
 
             // is there room between prev_end and next_start?
@@ -143,7 +148,7 @@ pub const VirtualMemoryManager = struct {
             const prev_end = if (prev) |p|
                 @intFromPtr(p.region.ptr) + p.region.len
             else
-                self.virt_base;
+                self.virt_start;
             found_base = prev_end;
         }
 
@@ -190,6 +195,111 @@ pub const VirtualMemoryManager = struct {
 
         log.info("alloc@{x:0>16}:{x}", .{ @intFromPtr(obj.region.ptr), obj.region.len });
         return obj.region;
+    }
+
+    // Allocates from the end of the VA space.or this purpose.
+    //
+    // Will panic if it was called but the virt_end field isn't defined.
+    //
+    // So if the end of VA space is 0x0000_7fff_ffff_f000 and I do allocEnd() with a size of
+    // 0x1000, then it returns me a virt buffer with ptr 0x0000_7fff_ffff_e000 and len 0x1000.
+
+    pub fn allocEnd(
+        self: *VirtualMemoryManager,
+        size: u64,
+        flags: []const VmObjectFlag,
+        phys: ?u64,
+    ) Error![]u8 {
+        const length = paging.pageCeil(size);
+
+        // Must have an upper bound
+        const end_addr: u64 = if (self.virt_end) |e| e else {
+            log.err("allocEnd() called on an address space whose end isn't defined", .{});
+            @panic("VirtualMemoryManager: allocEnd() called on an address space whose end isn't defined");
+        };
+
+        // Find the highest fitting gap
+        var found = false;
+        var found_base: u64 = 0;
+
+        // First gap: from virt_start to first object
+        var vm = self.vm_objects;
+        if (vm) |first| {
+            considerGap(self.virt_start, @intFromPtr(first.region.ptr), length, &found, &found_base);
+        } else {
+            // no objects at all → whole range is a gap
+            considerGap(self.virt_start, end_addr, length, &found, &found_base);
+        }
+
+        // Intermediate gaps and final gap to end_addr
+        while (vm) |node| {
+            const gap_start = @intFromPtr(node.region.ptr) + node.region.len;
+            const gap_end = if (node.next) |n| @intFromPtr(n.region.ptr) else end_addr;
+            considerGap(gap_start, gap_end, length, &found, &found_base);
+            vm = node.next;
+        }
+
+        if (!found) {
+            return Error.OverlappingRegion;
+        }
+
+        // Create and splice into the sorted vm_objects list
+        const obj = try self.allocator.create(VmObject);
+
+        var prev_list: ?*VmObject = null;
+        var curr_list: ?*VmObject = self.vm_objects;
+        while (curr_list) |curr| {
+            if (@intFromPtr(curr.region.ptr) >= found_base) break;
+            prev_list = curr;
+            curr_list = curr.next;
+        }
+
+        if (prev_list) |p| {
+            p.next = obj;
+        } else {
+            self.vm_objects = obj;
+        }
+
+        // Determine physical backing
+        const phys_addr: u64 = blk: {
+            if (phys) |p| break :blk p;
+            const pframe = pmm.global_pmm.alloc(length);
+            std.debug.assert(pframe.len == length);
+            break :blk @intFromPtr(pframe.ptr);
+        };
+
+        // Initialize the new VmObject
+        obj.* = VmObject{
+            .phys_addr = phys_addr,
+            .region = @as([*]u8, @ptrFromInt(found_base))[0..length],
+            .flags = VmObjectFlag.asRaw(flags),
+            .next = curr_list,
+        };
+
+        // Map it in
+        const entry_flags = VmObjectFlag.toX86(obj.flags);
+        std.debug.assert(pmm.global_pmm.isFree(phys_addr) == false);
+        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ @intFromPtr(obj.region.ptr), obj.region.len, phys_addr, flags });
+        paging.mapRange(self.pt_root, @intFromPtr(obj.region.ptr), phys_addr, length, entry_flags);
+        log.info("allocEnd@{x:0>16}:{x}", .{ @intFromPtr(obj.region.ptr), obj.region.len });
+
+        return obj.region;
+    }
+
+    fn considerGap(
+        gap_start: u64, // the virtual address where this free region begins
+        gap_end: u64, // the virtual address where this free region ends
+        length: u64, // the (page-aligned) size we need to allocate
+        found: *bool, // pointer to "have we found any fitting gap yet?"
+        found_base: *u64, // pointer to the best base address we've chosen so far
+    ) void {
+        if (gap_end >= gap_start and gap_end - gap_start >= length) {
+            const candidate = gap_end - length;
+            if (found.* == false or candidate > found_base.*) {
+                found_base.* = candidate;
+                found.* = true;
+            }
+        }
     }
 
     /// Map an existing physical range into the current address space.
@@ -336,7 +446,7 @@ pub const VirtualMemoryManager = struct {
         _ = options;
         try writer.print("VirtualMemoryManager {{\n", .{});
         try writer.print("  PML4 Root: {x:0>16}\n", .{@intFromPtr(self.pt_root)});
-        try writer.print("  Base: {x:0>16}\n", .{self.virt_base});
+        try writer.print("  Base: {x:0>16}\n", .{self.virt_start});
         try writer.print("  Regions {{\n", .{});
         var current: ?*VmObject = self.vm_objects;
         while (current) |vm| {
