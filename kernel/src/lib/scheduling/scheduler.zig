@@ -1,6 +1,7 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
 const idt = @import("../interrupts/idt.zig");
+const ioapic = @import("../interrupts/ioapic.zig");
 const process = @import("process.zig");
 const kernel_allocator = @import("../memory/allocator.zig");
 const term = @import("../tty/terminal.zig");
@@ -45,6 +46,15 @@ fn idleMain(arg: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
         asm volatile ("sti");
         cpu.hlt();
     }
+}
+
+pub fn yield() void {
+    // fire the PIT interrupt manually so that the scheduler is called
+    asm volatile (
+        \\int %[vector]
+        :
+        : [vector] "i" (ioapic.InterruptVectors.PitTimer.get()),
+    );
 }
 
 pub const Scheduler = struct {
