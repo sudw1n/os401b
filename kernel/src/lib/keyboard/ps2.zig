@@ -37,7 +37,10 @@ pub const Ps2Driver = struct {
     allocator: std.mem.Allocator,
     /// A circular buffer to store the scancodes
     buffer: []KeyEvent,
-    buf_position: usize,
+    /// Points to the next free slot in the buffer
+    head: usize,
+    /// Points to the next slot to read from in the buffer
+    tail: usize,
     /// To handle multi-byte scancodes, we implement a simple state machine.
     /// This holds the current state of the state machine.
     current_state: State,
@@ -59,23 +62,32 @@ pub const Ps2Driver = struct {
             log.err("Failed to allocate PS/2 keyboard buffer: {}", .{err});
             @panic("PS/2 keyboard buffer allocation failed");
         };
+        @memset(buffer, KeyEvent{
+            .code = Scancode.Unknown,
+            .type = .Make,
+            .status_mask = Modifier.None.asInt(),
+        });
         self.* = Ps2Driver{
             .allocator = allocator,
             .buffer = buffer,
-            .buf_position = 0,
+            .head = 0,
+            .tail = 0,
             .current_state = .Normal,
         };
     }
 
     pub fn deinit(self: *Ps2Driver) void {
+        self.head = 0;
+        self.tail = 0;
         self.allocator.free(self.buffer);
-        self.allocator.destroy(self);
     }
 
     pub fn getChar(self: *Ps2Driver) ?u8 {
-        if (self.buf_position == 0) return null;
-        const e = self.buffer[(self.buf_position - 1)];
-        self.buf_position -= 1;
+        log.debug("getChar: head={d} tail={d}", .{ self.head, self.tail });
+        if (self.tail == self.head) return null;
+        const e = self.buffer[self.tail];
+        self.tail = (self.tail + 1) % ring_len;
+        log.debug(" → returning {}, new tail={d}", .{ e, self.tail });
         return translateKeyEvent(e);
     }
 
@@ -87,10 +99,15 @@ pub const Ps2Driver = struct {
             return;
         }
 
-        const maybe_event = self.getKeyEvent(code);
-        if (maybe_event) |event| {
-            self.buffer[self.buf_position] = event;
-            self.buf_position = (self.buf_position + 1) % ring_len;
+        if (self.getKeyEvent(code)) |event| {
+            const next_head = (self.head + 1) % ring_len;
+            // if next_head == tail, buffer is full so we advance tail to drop the oldest
+            if (next_head == self.tail) {
+                log.debug("Buffer full, dropping oldest event: {}", .{self.buffer[self.tail]});
+                self.tail = (self.tail + 1) % ring_len;
+            }
+            self.buffer[self.head] = event;
+            self.head = next_head;
         }
         if (self.current_state == .Prefix) {
             // if we were in the prefix state, we go back to the normal state
