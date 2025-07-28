@@ -46,6 +46,8 @@ pub const tsc = @import("lib/timers/tsc.zig");
 // Keyboard
 pub const ps2 = @import("lib/keyboard/ps2.zig");
 
+pub const scheduler = @import("lib/scheduling/scheduler.zig");
+
 // Errors
 pub const Error = TtyError || SerialError;
 
