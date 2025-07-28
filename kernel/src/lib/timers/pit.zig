@@ -41,6 +41,12 @@ pub fn sleep(ms: u32) void {
     }
 }
 
+pub fn getUptimeMs() u64 {
+    const total_ticks_per_sec = std.math.mulWide(u32, pit_ticks, TICKS_PER_SEC);
+    const ms = std.math.divCeil(u64, total_ticks_per_sec, std.time.ms_per_s) catch @panic("sleep: division error");
+    return ms;
+}
+
 /// Return the initial count needed to generate interrupts at the given rate.
 ///
 /// hz: Desired interrupt frequency, in hertz (i.e. how many interrupts per second).
