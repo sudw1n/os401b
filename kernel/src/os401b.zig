@@ -5,6 +5,10 @@ const fblib = @import("lib/tty/framebuffer.zig");
 
 pub const Color = fblib.Color;
 
+// Locks
+pub const lock = @import("lib/lock.zig");
+pub const SpinLock = lock.SpinLock;
+
 // Framebuffer
 pub const term = @import("lib/tty/terminal.zig");
 pub const TtyError = term.TtyError;
