@@ -6,6 +6,7 @@ const paging = @import("../memory/paging.zig");
 const vmm_lib = @import("../memory/vmm.zig");
 const heap_allocator = @import("../memory/allocator.zig");
 const scheduler = @import("scheduler.zig");
+const pit = @import("../timers/pit.zig");
 
 const SegmentSelector = gdt.SegmentSelector;
 const CpuContext = idt.InterruptFrame;
@@ -35,6 +36,7 @@ pub const Thread = struct {
     stack: []u8,
     stack_guard_page: []u8,
     context: CpuContext,
+    wake_time: u64,
 
     next: ?*Thread = null,
 
@@ -64,6 +66,13 @@ pub const Thread = struct {
         // Clear the thread's stack
         self.parent.vmm.free(self.stack_guard_page);
         self.parent.vmm.free(self.stack);
+    }
+
+    pub fn sleep(self: *Thread, duration_ms: u64) void {
+        log.info("Thread {s} (TID: {d}) is going to sleep for {d} ms", .{ self.name, self.tid, duration_ms });
+        self.state = State.Sleeping;
+        self.wake_time = pit.getUptimeMs() + duration_ms;
+        scheduler.yield();
     }
 
     // will call the thread's entry point and then exit the thread
@@ -322,11 +331,13 @@ pub const Process = struct {
 };
 
 pub const State = enum {
-    /// The process is in the queue and waiting to be scheduled.
+    /// The thread is in the queue and waiting to be scheduled.
     Ready,
-    /// The process is currently running on the CPU.
+    /// The thread is currently running on the CPU.
     Running,
-    /// The process has finished running and should not be scheduled. Its resources can also be
+    /// The thread has finished running and should not be scheduled. Its resources can also be
     /// cleaned up.
     Dead,
+    /// The thread is currently sleeping and will be woken up after a certain time.
+    Sleeping,
 };
