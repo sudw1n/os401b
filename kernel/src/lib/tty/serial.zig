@@ -1,6 +1,9 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
+const registers = @import("../registers.zig");
 const lock_lib = @import("../lock.zig");
+
+const Rflags = registers.Rflags;
 
 const SpinLock = lock_lib.SpinLock;
 
@@ -90,13 +93,13 @@ pub const SerialWriter = struct {
     }
 
     fn writeStr(s: []const u8) void {
-        (&lock).acquire();
+        const old_rflags = (&lock).acquireFlagsSave();
         for (s) |c| {
             while (isTransmitEmpty()) {
                 asm volatile ("pause");
             }
             cpu.out(u8, PORT, c);
         }
-        (&lock).release();
+        (&lock).releaseFlagsRestore(old_rflags);
     }
 };
