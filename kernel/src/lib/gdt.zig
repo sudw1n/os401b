@@ -29,6 +29,10 @@ pub const SegmentSelector = enum(u16) {
     UserCode = 0x18,
     // 64-bit
     UserData = 0x20,
+
+    pub fn get(self: SegmentSelector, comptime T: type) T {
+        return @intFromEnum(self);
+    }
 };
 
 /// Part of the GDT entry that describes the access rights of the segment
