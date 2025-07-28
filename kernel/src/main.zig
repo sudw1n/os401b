@@ -29,6 +29,8 @@ const Hpet = lib.hpet.Hpet;
 
 const ps2 = lib.ps2;
 
+const scheduler = lib.scheduler;
+
 const Error = lib.Error;
 
 const KERNEL_VERSION = "0.0.1";
@@ -166,8 +168,18 @@ fn init() Error!void {
     pit.init();
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Unmasking IRQ lines", .{});
-    ioapic.routeVectors();
+    try term.logStepBegin("Unmasking Keyboard IRQ", .{});
+    ioapic.routeKeyboard();
+    try term.logStepEnd(true);
+
+    try term.logStepBegin("Initializing scheduler", .{});
+    asm volatile ("cli");
+    scheduler.init();
+    asm volatile ("sti");
+    try term.logStepEnd(true);
+
+    try term.logStepBegin("Unmasking PIT IRQ", .{});
+    ioapic.routePit();
     try term.logStepEnd(true);
 }
 
