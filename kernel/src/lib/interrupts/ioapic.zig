@@ -251,7 +251,7 @@ pub fn routeVectors() void {
 }
 
 /// Program the I/O APIC to route the PIT timer interrupts to the LAPIC
-fn routePit() void {
+pub fn routePit() void {
     // since we're using UEFI the PIT should appear as IRQ 2
     const pin = 2;
     const lvt = Lvt.init(InterruptVectors.PitTimer.get(), false);
@@ -259,7 +259,7 @@ fn routePit() void {
 }
 
 /// Program the I/O APIC to route the keyboard interrupts to the LAPIC
-fn routeKeyboard() void {
+pub fn routeKeyboard() void {
     // The PS/2 Keyboard is IRQ 1
     const pin = 1;
     const lvt = Lvt.init(InterruptVectors.Keyboard.get(), false);
