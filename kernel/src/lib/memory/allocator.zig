@@ -3,7 +3,7 @@ const pmm = @import("pmm.zig");
 const paging = @import("paging.zig");
 const vmm = @import("vmm.zig");
 
-const log = std.log.scoped(.heap);
+const log = std.log.scoped(.allocator);
 
 pub var global_allocator: Allocator = undefined;
 
@@ -21,7 +21,6 @@ pub const Allocator = struct {
     vmm: ?*VirtualMemoryManager,
     heap: []u8,
     end_index: usize,
-    remaining: usize,
     chunks_head: ?*ChunkHeader = null,
     chunks_tail: ?*ChunkHeader = null,
 
@@ -50,7 +49,6 @@ pub const Allocator = struct {
             .vmm = vmm_instance,
             .heap = heap,
             .end_index = 0,
-            .remaining = heap.len,
         };
     }
 
@@ -66,13 +64,11 @@ pub const Allocator = struct {
             .vmm = null,
             .heap = heap,
             .end_index = 0,
-            .remaining = heap.len,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.end_index = 0;
-        self.remaining = 0;
         if (self.vmm) |v| v.free(self.heap);
     }
 
@@ -103,12 +99,13 @@ pub const Allocator = struct {
 
         var node = self.chunks_head;
         while (node) |hdr| {
+            log.debug("hdr = {x:0>16}", .{@intFromPtr(hdr)});
+            log.debug("hdr.next = {x:0>16}", .{@intFromPtr(hdr.next)});
             if (hdr.size >= size and hdr.status == .Free) {
                 hdr.status = .Used;
 
                 const chunk: []u8 = (@as([*]u8, @ptrCast(hdr)) + header_size)[0..size];
-                self.remaining -= (size + header_size);
-                log.info("alloc@{x:0>16}:{x} (reuse), remaining {x}", .{ @intFromPtr(chunk.ptr), size, self.remaining });
+                log.info("alloc@{x:0>16}:{x} (reuse)", .{ @intFromPtr(chunk.ptr), size });
 
                 @memset(chunk, 0);
 
@@ -150,6 +147,7 @@ pub const Allocator = struct {
         log.debug("adjusting end_index by {x} bytes to align header", .{adjust_off});
         self.end_index += adjust_off;
 
+        log.debug("end_index = {x:0>16}, size = {d}, heap.len = {x:0>16}", .{ self.end_index, size, self.heap.len });
         if (self.end_index + size >= self.heap.len - min_payload_size) {
             self.expand() orelse return null;
         }
@@ -176,15 +174,15 @@ pub const Allocator = struct {
         self.chunks_tail = hdr_ptr;
 
         // move forward the pointer
+        log.debug("end_index = {d}, header_size = {d}", .{ self.end_index, header_size });
         self.end_index += header_size;
         // return the memory after the header
         const chunk = self.heap[self.end_index .. self.end_index + size];
         // move forward the pointer by the size of allocation
+        log.debug("end_index = {d}, size = {d}", .{ self.end_index, size });
         self.end_index += size;
 
-        self.remaining -= (size + header_size);
-
-        log.info("alloc@{x:0>16}:{x}, remaining {x}", .{ @intFromPtr(chunk.ptr), size, self.remaining });
+        log.info("alloc@{x:0>16}:{x}", .{ @intFromPtr(chunk.ptr), size });
         @memset(chunk, 0);
         return chunk.ptr;
     }
@@ -202,8 +200,7 @@ pub const Allocator = struct {
         if (hdr_ptr.status == ChunkStatus.Used) {
             @branchHint(.likely);
             hdr_ptr.status = ChunkStatus.Free;
-            self.remaining += hdr_ptr.size + @sizeOf(ChunkHeader);
-            log.info("free@{x:0>16}:{x}({x}), remaining {x}", .{ @intFromPtr(memory.ptr), memory.len, hdr_ptr.size, self.remaining });
+            log.info("free@{x:0>16}:{x}({x})", .{ @intFromPtr(memory.ptr), memory.len, hdr_ptr.size });
             // merging
             if (hdr_ptr.next) |next| {
                 // merge with next chunk if it is free
@@ -252,11 +249,10 @@ pub const Allocator = struct {
         // free the old heap memory
         v.free(self.heap);
         self.heap = new_heap;
-        self.remaining += expansion_size;
 
-        log.info("Expanded heap from {x:0>16}:{x} to {x}, remaining {x}", .{
+        log.info("Expanded heap from {x:0>16}:{x} to {x}", .{
             @intFromPtr(self.heap.ptr), self.heap.len,
-            new_heap_size,              self.remaining,
+            new_heap_size,
         });
     }
 
