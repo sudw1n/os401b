@@ -1,7 +1,12 @@
 const std = @import("std");
 const cpu = @import("../cpu.zig");
+const lock_lib = @import("../lock.zig");
+
+const SpinLock = lock_lib.SpinLock;
 
 var serial: SerialWriter = undefined;
+
+var lock = SpinLock.init();
 
 pub fn init() SerialError!void {
     serial = try SerialWriter.init();
@@ -85,11 +90,13 @@ pub const SerialWriter = struct {
     }
 
     fn writeStr(s: []const u8) void {
+        (&lock).acquire();
         for (s) |c| {
             while (isTransmitEmpty()) {
                 asm volatile ("pause");
             }
             cpu.out(u8, PORT, c);
         }
+        (&lock).release();
     }
 };
