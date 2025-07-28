@@ -13,6 +13,7 @@ const lapic = @import("lapic.zig");
 const ioapic = @import("ioapic.zig");
 const ps2 = @import("../keyboard/ps2.zig");
 const pit = @import("../timers/pit.zig");
+const scheduler = @import("../scheduling/scheduler.zig");
 const registers = @import("../registers.zig");
 const Cr2 = registers.Cr2;
 const Rflags = registers.Rflags;
@@ -226,8 +227,21 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
             return;
         },
         IoApicInterrupts.PitTimer.get() => {
-            log.debug("Received PIT timer interrupt, forwarding to PIT module", .{});
+            log.debug("Received PIT timer interrupt, forwarding to PIT and Scheduler modules", .{});
+            asm volatile ("cli");
             pit.handle();
+            if (scheduler.global_scheduler) |g| {
+                // schedule() saves `frame` into old_thread.context,
+                // picks a next thread, loads its page‑tables, and returns
+                // a pointer to that thread's CpuContext
+                const next_ctx = g.schedule(frame);
+                // overwrite the on‑stack interrupt frame with the new one
+                // so that iret will pop the registers, RIP, RSP, etc. for
+                // the new thread
+                frame.* = next_ctx.*;
+            }
+            asm volatile ("sti");
+            return;
         },
         else => {},
     }
