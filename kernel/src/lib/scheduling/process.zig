@@ -99,12 +99,14 @@ pub const Thread = struct {
 
         const parent = self.parent;
 
+        log.debug("Allocating stack for thread {s} (TID: {d})", .{ self.name, self.tid });
         self.stack = parent.vmm.allocEnd(STACK_SIZE, &.{
             .Write,
         }, null) catch |err| {
             log.err("Failed to allocate stack for thread: {}", .{err});
             @panic("Failed to allocate stack for thread");
         };
+        log.debug("Allocating stack guard page for thread {s} (TID: {d})", .{ self.name, self.tid });
         self.stack_guard_page = parent.vmm.allocEnd(0x1000, &.{.Disabled}, null) catch |err| {
             log.err("Failed to allocate stack guard page for thread: {}", .{err});
             @panic("Failed to allocate stack guard page for thread");
