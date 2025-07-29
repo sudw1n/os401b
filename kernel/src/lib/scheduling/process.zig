@@ -36,7 +36,7 @@ pub const Thread = struct {
     stack: []u8,
     stack_guard_page: []u8,
     context: CpuContext,
-    wake_time: u64,
+    wake_time: ?u64,
 
     next: ?*Thread = null,
 
@@ -49,6 +49,7 @@ pub const Thread = struct {
             .stack = undefined,
             .stack_guard_page = undefined,
             .context = undefined, // Will be initialized later by initContext
+            .wake_time = null,
         };
 
         const len = @min(NAME_MAX_LEN, name.len);
