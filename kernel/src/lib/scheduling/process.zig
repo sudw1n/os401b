@@ -171,8 +171,8 @@ pub const Process = struct {
         // process is loaded, its kernel pml4 generation is checked against the current generation.
         // If the current generation is higher, we copy the process' kernel tables over so that the
         // page tables are synchronized.
-        log.debug("Copying kernel PML4 entries to process VMM PML4", .{});
-        @memcpy(vmm_instance.pt_root.entries[256..511], vmm_lib.global_vmm.pt_root.entries[256..511]);
+        log.info("Copying kernel PML4 entries to process VMM PML4", .{});
+        @memcpy(vmm_instance.pt_root.entries[256..], vmm_lib.global_vmm.pt_root.entries[256..]);
 
         self.* = Process{
             .name = [_]u8{0} ** NAME_MAX_LEN,
