@@ -93,6 +93,15 @@ pub const PageTableEntry = packed struct {
         const entry: u64 = (frame_address & bit_12_51_mask) | (flags & ~bit_12_51_mask);
         return PageTableEntry{ .entry = entry };
     }
+    pub fn format(self: PageTableEntry, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("{x:0>16} (Frame: {x:0>16} Flags: {x:0>16})", .{
+            self.entry,
+            self.getFrameAddress(), // Print only the frame address
+            self.entry & ~bit_12_51_mask, // Print only the flags
+        });
+    }
 
     /// Initializes a page table entry with the given physical frame address and flags.
     /// The frame address is masked to ensure only the proper bits are set.
@@ -159,6 +168,21 @@ pub const PageTable = struct {
         // Deallocate the page table.
         const len = @sizeOf(PageTable);
         pmm.global_pmm.free(phys_ptr[0..len]);
+    }
+
+    pub fn format(self: *PageTable, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        // Format the page table entries.
+        _ = fmt;
+        _ = options;
+        try writer.print("PageTable@{x:0>16}:\n", .{@intFromPtr(self)});
+        for (self.entries, 0..) |entry, index| {
+            if (entry.checkFlag(.Present)) {
+                try writer.print("  [{d}] {}\n", .{
+                    index,
+                    entry,
+                });
+            }
+        }
     }
 
     pub fn isEmpty(self: *PageTable) bool {
