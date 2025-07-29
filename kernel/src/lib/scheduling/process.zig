@@ -1,4 +1,5 @@
 const std = @import("std");
+const registers = @import("../registers.zig");
 const gdt = @import("../gdt.zig");
 const idt = @import("../interrupts/idt.zig");
 const pmm = @import("../memory/pmm.zig");
@@ -8,6 +9,7 @@ const heap_allocator = @import("../memory/allocator.zig");
 const scheduler = @import("scheduler.zig");
 const pit = @import("../timers/pit.zig");
 
+const Rflags = registers.Rflags;
 const SegmentSelector = gdt.SegmentSelector;
 const CpuContext = idt.InterruptFrame;
 const VirtualMemoryManager = vmm_lib.VirtualMemoryManager;
@@ -26,7 +28,7 @@ const VMM_BUFFER_SIZE: usize = 0x10000; // 64 KiB
 const VIRT_BASE_START: usize = 0x00400000;
 const VIRT_BASE_END: usize = 0x0000_7FFF_FFFF_F000;
 // 64 KiB stack size
-const STACK_SIZE: usize = 0x10000;
+const STACK_SIZE: usize = 0x100000;
 
 pub const Thread = struct {
     parent: *Process,
@@ -59,9 +61,10 @@ pub const Thread = struct {
 
     pub fn initContext(self: *Thread, function: ThreadFunction, arg: *anyopaque) void {
         log.debug("Initializing thread context for {s} (TID: {d})", .{ self.name, self.tid });
+        @memset(@as([*]u8, @ptrCast(@alignCast(&self.context)))[0..@sizeOf(CpuContext)], 0); // Clear the context
         self.initStack();
         self.initCode(function, arg);
-        self.context.rflags.@"if" = true; // Enable interrupts
+        self.context.rflags.@"if" = true;
     }
 
     pub fn deinit(self: *Thread) void {
@@ -95,6 +98,8 @@ pub const Thread = struct {
     }
 
     fn initStack(self: *Thread) void {
+        self.context.es = SegmentSelector.KernelData.get(u64);
+        self.context.ds = SegmentSelector.KernelData.get(u64);
         self.context.ss = SegmentSelector.KernelData.get(u64);
 
         const parent = self.parent;
