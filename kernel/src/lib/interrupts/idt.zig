@@ -178,18 +178,18 @@ export fn interruptCommon() callconv(.Naked) void {
     asm volatile (
         \\mov %%rsp, %%rdi
         \\call interruptDispatch
-    );
-
-    // restore segment registers
-    asm volatile (
-        \\pop %rax
+        // if the interrupt handler returns a pointer to an InterruptFrame,
+        // then we switch RSP to that frame.
+        \\test %%rax, %%rax
+        \\jz 1f
+        \\mov %%rax, %%rsp
+        // restore segment registers
+        \\1:
+        \\popq %rax
         \\mov %rax, %%es
         \\pop %%rax
         \\mov %%rax, %%ds
-    );
-
-    // Restore general purpose registers
-    asm volatile (
+        // Restore general purpose registers
         \\popq   %r15
         \\popq   %r14
         \\popq   %r13
@@ -205,17 +205,14 @@ export fn interruptCommon() callconv(.Naked) void {
         \\popq   %rcx
         \\popq   %rbx
         \\popq   %rax
-    );
-
-    // remove the vector number + error code
-    asm volatile (
+        // remove the vector number + error code
         \\addq   $0x10, %%rsp
+        // return from interrupt
+        \\iretq
     );
-    // return from interrupt
-    asm volatile ("iretq");
 }
 
-export fn interruptDispatch(frame: *InterruptFrame) void {
+export fn interruptDispatch(frame: *InterruptFrame) ?*InterruptFrame {
     const vector: u8 = @intCast(frame.vector_number);
     switch (vector) {
         LApicInterrupts.Spurious.get() => {
@@ -224,24 +221,21 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
         IoApicInterrupts.Keyboard.get() => {
             log.debug("Received keyboard interrupt, forwarding to PS/2 module", .{});
             ps2.handle();
-            return;
+            return null;
         },
         IoApicInterrupts.PitTimer.get() => {
             log.debug("Received PIT timer interrupt, forwarding to PIT and Scheduler modules", .{});
-            asm volatile ("cli");
             pit.handle();
             if (scheduler.global_scheduler) |g| {
                 // schedule() saves `frame` into old_thread.context,
                 // picks a next thread, loads its page‑tables, and returns
                 // a pointer to that thread's CpuContext
-                const next_ctx = g.schedule(frame);
-                // overwrite the on‑stack interrupt frame with the new one
-                // so that iret will pop the registers, RIP, RSP, etc. for
-                // the new thread
-                frame.* = next_ctx.*;
+                const new_ctx = g.schedule(frame);
+                log.info("Old context:\n{}", .{frame});
+                log.info("New context:\n{}", .{new_ctx});
+                return new_ctx;
             }
-            asm volatile ("sti");
-            return;
+            return null;
         },
         else => {},
     }
@@ -249,7 +243,7 @@ export fn interruptDispatch(frame: *InterruptFrame) void {
     if (LApicInterrupts.is(vector) or IoApicInterrupts.is(vector)) {
         log.debug("Received APIC interrupt with vector 0x{x}, sending EOI...", .{vector});
         lapic.global_lapic.sendEoi();
-        return;
+        return null;
     }
 
     log.info("Received interrupt 0x{x}", .{vector});
