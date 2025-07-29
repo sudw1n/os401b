@@ -69,6 +69,14 @@ pub const std_options = std.Options{
             .scope = .pit,
             .level = .info,
         },
+        .{
+            .scope = .ps2,
+            .level = .info,
+        },
+        .{
+            .scope = .scheduler,
+            .level = .debug,
+        },
     },
     .logFn = serial.log,
 };
@@ -105,10 +113,7 @@ pub fn kmain() Error!void {
 
     // spawn a shell
     log.info("spawning the shell", .{});
-    shell() catch |err| {
-        log.err("shell returned error: {}", .{err});
-        @panic("shell errored out");
-    };
+    try shell();
 }
 
 fn init() Error!void {
@@ -168,18 +173,8 @@ fn init() Error!void {
     pit.init();
     try term.logStepEnd(true);
 
-    try term.logStepBegin("Unmasking Keyboard IRQ", .{});
-    ioapic.routeKeyboard();
-    try term.logStepEnd(true);
-
-    try term.logStepBegin("Initializing scheduler", .{});
-    asm volatile ("cli");
-    scheduler.init();
-    asm volatile ("sti");
-    try term.logStepEnd(true);
-
-    try term.logStepBegin("Unmasking PIT IRQ", .{});
-    ioapic.routePit();
+    try term.logStepBegin("Unmasking IRQ lines", .{});
+    ioapic.routeVectors();
     try term.logStepEnd(true);
 }
 
@@ -196,7 +191,7 @@ fn shell() Error!void {
     var input_count: usize = 0;
     while (true) {
         const c = ps2.ps2_driver.getChar() orelse {
-            asm volatile ("pause");
+            asm volatile ("hlt");
             continue;
         };
         try term.print("{c}", .{c});
@@ -205,6 +200,34 @@ fn shell() Error!void {
             buffer[input_count] = 0; // null-terminate the string
             if (std.mem.eql(u8, buffer[0..input_count], target_input)) {
                 try term.print("\nStarting scheduler...\n", .{});
+                asm volatile ("cli"); // disable interrupts
+                scheduler.init();
+                var g = scheduler.global_scheduler orelse @panic("Scheduler not initialized");
+                g.scheduleNewThread(
+                    "idle",
+                    idle,
+                    &dummy_arg,
+                ) catch |err| {
+                    log.err("Failed to start idle thread: {}", .{err});
+                    @panic("Failed to start idle thread");
+                };
+                g.scheduleNewThread(
+                    "kproc1",
+                    kproc1,
+                    &dummy_arg,
+                ) catch |err| {
+                    log.err("Failed to start kproc1 thread: {}", .{err});
+                    @panic("Failed to start kproc1 thread");
+                };
+                g.scheduleNewThread(
+                    "kproc2",
+                    kproc2,
+                    &dummy_arg,
+                ) catch |err| {
+                    log.err("Failed to start kproc2 thread: {}", .{err});
+                    @panic("Failed to start kproc2 thread");
+                };
+                asm volatile ("sti"); // disable interrupts
                 break; // exit the loop to start the process
             } else {
                 try term.print("Unknown command: ", .{});
@@ -221,5 +244,26 @@ fn shell() Error!void {
             buffer[input_count] = c;
             input_count += 1;
         }
+    }
+}
+
+export var dummy_arg: u64 = 0xdeadbeef; // dummy argument for the idle thread
+
+export fn idle(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
+    while (true) {
+        // idle loop, just halt the CPU
+        cpu.hlt();
+    }
+}
+
+export fn kproc1(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
+    while (true) {
+        term.print("kproc1 is running...\n", .{}) catch @panic("Failed to print from kproc1");
+    }
+}
+
+export fn kproc2(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
+    while (true) {
+        term.print("kproc2 is running...\n", .{}) catch @panic("Failed to print from kproc2");
     }
 }
