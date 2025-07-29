@@ -4,6 +4,8 @@ const limine = @import("limine");
 const lib = @import("../../os401b.zig");
 const fblib = @import("framebuffer.zig");
 
+const SpinLock = lib.lock.SpinLock;
+
 const Framebuffer = fblib.Framebuffer;
 const Color = fblib.Color;
 
@@ -33,6 +35,8 @@ var cursor: usize = undefined;
 const TAB_WIDTH = 4;
 
 var writer: TerminalWriter = TerminalWriter{};
+
+var lock: SpinLock = SpinLock.init();
 
 /// Initialize the terminal
 pub fn init(raw_framebuffer: *limine.FramebufferResponse, foreground_color: Color, background_color: Color) TtyError!void {
@@ -85,6 +89,7 @@ pub fn logStepEnd(success: bool) TtyError!void {
 }
 
 fn writeStr(bytes: []const u8) TtyError!void {
+    const rflags = (&lock).acquireFlagsSave();
     for (bytes) |char| {
         switch (char) {
             '\r', '\n' => try newline(),
@@ -93,6 +98,7 @@ fn writeStr(bytes: []const u8) TtyError!void {
             else => try writeChar(char),
         }
     }
+    (&lock).releaseFlagsRestore(rflags);
 }
 
 fn writeChar(char: u8) TtyError!void {
