@@ -211,22 +211,22 @@ fn shell() Error!void {
                     log.err("Failed to start idle thread: {}", .{err});
                     @panic("Failed to start idle thread");
                 };
-                g.scheduleNewThread(
-                    "kproc1",
-                    kproc1,
-                    &dummy_arg,
-                ) catch |err| {
-                    log.err("Failed to start kproc1 thread: {}", .{err});
-                    @panic("Failed to start kproc1 thread");
-                };
-                g.scheduleNewThread(
-                    "kproc2",
-                    kproc2,
-                    &dummy_arg,
-                ) catch |err| {
-                    log.err("Failed to start kproc2 thread: {}", .{err});
-                    @panic("Failed to start kproc2 thread");
-                };
+                //  g.scheduleNewThread(
+                //      "kproc1",
+                //      kproc1,
+                //      &dummy_arg,
+                //  ) catch |err| {
+                //      log.err("Failed to start kproc1 thread: {}", .{err});
+                //      @panic("Failed to start kproc1 thread");
+                //  };
+                //  g.scheduleNewThread(
+                //      "kproc2",
+                //      kproc2,
+                //      &dummy_arg,
+                //  ) catch |err| {
+                //      log.err("Failed to start kproc2 thread: {}", .{err});
+                //      @panic("Failed to start kproc2 thread");
+                //  };
                 asm volatile ("sti"); // disable interrupts
                 break; // exit the loop to start the process
             } else {
