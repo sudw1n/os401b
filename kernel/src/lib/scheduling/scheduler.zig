@@ -16,10 +16,7 @@ const log = std.log.scoped(.scheduler);
 
 pub var global_scheduler: ?*Scheduler = null;
 
-pub export var val: u64 = 0xdeadbeef;
-
 pub fn init() void {
-    asm volatile ("cli");
     // Initialize the scheduler, set up the first process, etc.
     const allocator = kernel_allocator.allocator();
     global_scheduler = allocator.create(Scheduler) catch |err| {
@@ -28,24 +25,6 @@ pub fn init() void {
     };
     var g = global_scheduler.?; // safe to unwrap because we just allocated it
     g.init(allocator);
-    g.scheduleNewThread("main1", idleMain, &val) catch |err| {
-        log.err("Failed to initialize scheduler: {}", .{err});
-        @panic("Scheduler initialization failed");
-    };
-    asm volatile ("sti");
-}
-
-fn idleMain(arg: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
-    _ = arg;
-    while (true) {
-        asm volatile ("cli");
-        term.print("this is first thread", .{}) catch |err| {
-            log.err("Failed to print from first thread: {}", .{err});
-            @panic("Failed to print from first thread");
-        };
-        asm volatile ("sti");
-        cpu.hlt();
-    }
 }
 
 pub fn yield() void {
@@ -91,7 +70,6 @@ pub const Scheduler = struct {
     /// Heart of the scheduler: save the old context, pick the next READY,
     /// clean out any DEAD processes as we go, and return its context.
     pub fn schedule(self: *Scheduler, context: *CpuContext) *CpuContext {
-        log.debug("entering schedule, current: {x:0>16}, context: {any}", .{ if (self.current) |c| @intFromPtr(c) else 0, context.* });
         const old = self.current orelse {
             log.err("No current thread to schedule", .{});
             @panic("No current thread to schedule");
@@ -128,7 +106,7 @@ pub const Scheduler = struct {
     }
 
     /// Insert `t` in the ring at the front
-    fn registerThread(self: *Scheduler, t: *Thread) void {
+    pub fn registerThread(self: *Scheduler, t: *Thread) void {
         log.info("Registering thread \"{s}\" (TID: {d})", .{ t.name, t.tid });
         if (self.threads) |first| {
             log.debug("Ring non-empty, head is \"{s}\" (TID: {d}), appending", .{ first.name, first.tid });
