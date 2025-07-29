@@ -43,7 +43,7 @@ pub const Thread = struct {
     pub fn init(self: *Thread, parent: *Process, name: []const u8, tid: u64, state: State) void {
         self.* = Thread{
             .parent = parent,
-            .name = [_]u8{0} ** NAME_MAX_LEN,
+            .name = undefined,
             .tid = tid,
             .state = state,
             .stack = undefined,
@@ -54,6 +54,7 @@ pub const Thread = struct {
 
         const len = @min(NAME_MAX_LEN, name.len);
         @memcpy(self.name[0..len], name[0..len]);
+        @memset(self.name[len..], 0); // Null-terminate the name
     }
 
     pub fn initContext(self: *Thread, function: ThreadFunction, arg: *anyopaque) void {
@@ -175,6 +176,7 @@ pub const Process = struct {
             .name = [_]u8{0} ** NAME_MAX_LEN,
             .vmm_buffer = heap,
             .vmm_allocator = vmm_allocator,
+            .name = undefined,
             .vmm = vmm_instance,
             .allocator = heap_allocator.allocator(),
             .pid = pid,
@@ -188,6 +190,7 @@ pub const Process = struct {
             @intFromPtr(self.vmm_buffer.ptr),
             self.vmm_buffer.len,
         });
+        @memset(self.name[len..], 0); // Null-terminate the name
     }
 
     pub fn addThread(self: *Process, name: []const u8, function: ThreadFunction, arg: *anyopaque) *Thread {
