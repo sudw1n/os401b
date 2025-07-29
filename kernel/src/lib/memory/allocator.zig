@@ -99,8 +99,6 @@ pub const Allocator = struct {
 
         var node = self.chunks_head;
         while (node) |hdr| {
-            log.debug("hdr = {x:0>16}", .{@intFromPtr(hdr)});
-            log.debug("hdr.next = {x:0>16}", .{@intFromPtr(hdr.next)});
             if (hdr.size >= size and hdr.status == .Free) {
                 hdr.status = .Used;
 
@@ -144,10 +142,8 @@ pub const Allocator = struct {
         const header_align = @alignOf(ChunkHeader);
         // compute how many bytes we need to skip to align the header
         const adjust_off = std.mem.alignPointerOffset(self.heap.ptr + self.end_index, header_align) orelse return null;
-        log.debug("adjusting end_index by {x} bytes to align header", .{adjust_off});
         self.end_index += adjust_off;
 
-        log.debug("end_index = {x:0>16}, size = {d}, heap.len = {x:0>16}", .{ self.end_index, size, self.heap.len });
         if (self.end_index + size >= self.heap.len - min_payload_size) {
             self.expand() orelse return null;
         }
@@ -174,12 +170,10 @@ pub const Allocator = struct {
         self.chunks_tail = hdr_ptr;
 
         // move forward the pointer
-        log.debug("end_index = {d}, header_size = {d}", .{ self.end_index, header_size });
         self.end_index += header_size;
         // return the memory after the header
         const chunk = self.heap[self.end_index .. self.end_index + size];
         // move forward the pointer by the size of allocation
-        log.debug("end_index = {d}, size = {d}", .{ self.end_index, size });
         self.end_index += size;
 
         log.info("alloc@{x:0>16}:{x}", .{ @intFromPtr(chunk.ptr), size });
