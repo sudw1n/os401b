@@ -265,7 +265,7 @@ export fn interruptDispatch(frame: *InterruptFrame) ?*InterruptFrame {
 }
 
 /// Values pushed when an interrupt occurs.
-pub const InterruptFrame = packed struct {
+pub const InterruptFrame = extern struct {
     /// Extra Segment Selector
     es: u64,
     /// Data Segment Selector
