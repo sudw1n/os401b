@@ -331,10 +331,9 @@ pub const VirtualMemoryManager = struct {
 
         // round down start, round up length
         const aligned_start = paging.pageFloor(start);
-        const aligned_length = paging.pageCeil(len);
-        if (aligned_start != start or aligned_length != len) {
-            log.err("misaligned region: virt {x:0>16}:{x} -> {x:0>16}:{x}", .{ start, len, aligned_start, aligned_length });
-            return Error.MisalignedRegion;
+        const aligned_len = paging.pageCeil(len);
+        if (aligned_start != start or aligned_len != len) {
+            log.warn("misaligned region: virt {x:0>16}:{x} given, aligning to {x:0>16}:{x}", .{ start, len, aligned_start, aligned_len });
         }
 
         // find an insertion point into the sorted linked list by virtual address
@@ -343,7 +342,7 @@ pub const VirtualMemoryManager = struct {
         while (curr) |node| {
             const node_start = @intFromPtr(node.region.ptr);
             const node_end = node_start + node.region.len;
-            if (node_end <= start) {
+            if (node_end <= aligned_start) {
                 // the node is entirely before our region so keep searching forward
                 prev = curr;
                 curr = node.next;
@@ -358,8 +357,8 @@ pub const VirtualMemoryManager = struct {
             const node_start = @intFromPtr(node.region.ptr);
             const node_end = node_start + node.region.len;
             // the first check can short-circuit
-            if ((start < node_end) and (start + len > node_start)) {
-                log.err("overlapping region: virt {x:0>16}:{x} overlaps with existing region {x:0>16}:{x}", .{ start, len, node_start, node.region.len });
+            if ((aligned_start < node_end) and (aligned_start + aligned_len > node_start)) {
+                log.err("overlapping region: virt {x:0>16}:{x} overlaps with existing region {x:0>16}:{x}", .{ aligned_start, aligned_len, node_start, node.region.len });
                 return Error.OverlappingRegion;
             }
         }
@@ -378,14 +377,21 @@ pub const VirtualMemoryManager = struct {
         const entry_flags = VmObjectFlag.toX86(raw_flags);
 
         const phys_addr = blk: {
-            if (phys) |p| break :blk p;
+            if (phys) |p| {
+                // check if the phys address given is also page-aligned
+                const aligned_phys = paging.pageFloor(p);
+                if (aligned_phys != p) {
+                    log.warn("misaligned physical address: {x:0>16} given, aligning to {x:0>16}", .{ p, aligned_phys });
+                }
+                break :blk aligned_phys;
+            }
             const p = pmm.global_pmm.alloc(len);
             // sanity check: since we've already page aligned the size, the returned physical frame
             // allocation shouldn't have a different length
             std.debug.assert(p.len == len);
             break :blk @intFromPtr(p.ptr);
         };
-        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ start, len, phys_addr, flags });
+        log.info("Mapping virt {x:0>16}:{x} -> phys {x:0>16}, flags {s}", .{ aligned_start, aligned_len, phys_addr, flags });
 
         obj.* = VmObject{
             .phys_addr = phys_addr,
@@ -394,7 +400,7 @@ pub const VirtualMemoryManager = struct {
             .next = curr,
         };
 
-        paging.mapRange(self.pt_root, start, phys_addr, len, entry_flags);
+        paging.mapRange(self.pt_root, aligned_start, phys_addr, aligned_len, entry_flags);
 
         return;
     }
