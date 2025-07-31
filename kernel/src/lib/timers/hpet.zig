@@ -22,9 +22,8 @@ pub const Hpet = struct {
     /// Counter value
     counter: *volatile u64,
 
-    pub fn init(rsdp_response: *limine.RsdpResponse) Hpet {
-        const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
-        const xsdt = rsdp.getXSDT();
+    pub fn init() Hpet {
+        const xsdt = acpi.global_xsdt orelse @panic("XSDT hasn't been initialized");
         if (xsdt.findSdtHeader("HPET")) |hpet_sdt| {
             @branchHint(.likely);
 
