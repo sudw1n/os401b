@@ -1,7 +1,89 @@
 const std = @import("std");
 const limine = @import("limine");
 const paging = @import("memory/paging.zig");
+const vmm = @import("memory/vmm.zig");
 const log = std.log.scoped(.acpi);
+
+pub var global_rsdp: ?*Rsdp2Descriptor = null;
+pub var global_xsdt: ?*Xsdt = null;
+
+// Initialize the ACPI subsystem
+pub fn init(response: *limine.RsdpResponse) void {
+    log.info("Initializing RSDP from Limine response", .{});
+    const rsdp_base = response.address;
+    initRsdp(rsdp_base);
+
+    const rsdp = global_rsdp.?; // should not be null since we just initialized it
+    log.debug("{}", .{rsdp});
+
+    log.info("Initializing XSDT from RSDP", .{});
+
+    if (rsdp.xsdt_address == 0) {
+        @panic("XSDT address is null");
+    }
+    const xsdt_base = rsdp.xsdt_address;
+    initXsdt(xsdt_base);
+
+    const xsdt = global_xsdt.?; // should not be null since we just initialized it
+
+    log.info("Mapping XSDT entries", .{});
+    const entries = xsdt.getEntries();
+    for (entries) |entry| {
+        log.debug("Found SDT at physical address {x:0>16}", .{entry});
+        const sdt_header: *AcpiSdtHeader = @ptrFromInt(paging.physToVirt(entry));
+        // Map the SDT page
+        const sdt_slice = @as([*]u8, @ptrCast(sdt_header))[0..@sizeOf(AcpiSdtHeader)];
+        vmm.global_vmm.map(sdt_slice, entry, &.{
+            .Reserved,
+            .Mmio,
+        }) catch |err| {
+            log.err("Failed to map SDT page: {}", .{err});
+            @panic("SDT mapping failed");
+        };
+        log.debug("Mapped SDT with signature {s} at virtual address {x:0>16}", .{ sdt_header.signature, @intFromPtr(sdt_header) });
+    }
+}
+
+fn initRsdp(base: u64) void {
+    log.info("Retrieved RSDP base address: {x:0>16}", .{base});
+
+    // convert the address to virtual
+    const base_virt: *Rsdp2Descriptor = @ptrFromInt(paging.physToVirt(base));
+
+    // make sure the page in which RSDP is located is mapped.
+    const virt_slice = @as([*]u8, @ptrCast(base_virt))[0..@sizeOf(Rsdp2Descriptor)];
+    vmm.global_vmm.map(virt_slice, base, &.{
+        .Reserved,
+        .Mmio,
+    }) catch |err| {
+        log.err("Failed to map RSDP page: {}", .{err});
+        @panic("RSDP mapping failed");
+    };
+
+    if (!base_virt.validateChecksum()) {
+        @panic("RSDP validation failed");
+    }
+
+    global_rsdp = base_virt;
+    log.info("RSDP initialized at virt {x:0>16}", .{@intFromPtr(base_virt)});
+}
+
+fn initXsdt(base: u64) void {
+    const base_virt: *Xsdt = @ptrFromInt(paging.physToVirt(base));
+
+    // make sure the page in which XSDT is located is mapped.
+    const virt_slice = @as([*]u8, @ptrCast(base_virt))[0..@sizeOf(Xsdt)];
+    vmm.global_vmm.map(virt_slice, base, &.{
+        .Reserved,
+        .Mmio,
+    }) catch |err| {
+        log.err("Failed to map XSDT address: {}", .{err});
+        @panic("XSDT mapping failed");
+    };
+
+    global_xsdt = base_virt;
+    log.info("XSDT initialized at virt {x:0>16}", .{@intFromPtr(base_virt)});
+}
 
 /// Root System Descriptor Pointer
 pub const Rsdp2Descriptor = extern struct {
@@ -14,19 +96,18 @@ pub const Rsdp2Descriptor = extern struct {
     xsdt_address: u64 align(1),
     extended_checksum: u8 align(1),
     reserved: [3]u8 align(1),
-    pub fn init(response: *limine.RsdpResponse) *Rsdp2Descriptor {
-        // convert the address to virtual
-        const self: *Rsdp2Descriptor = @ptrFromInt(paging.physToVirt(response.address));
-        if (!self.validateChecksum()) {
-            @panic("RSDP validation failed");
-        }
-        return self;
-    }
-    pub fn getXSDT(self: *Rsdp2Descriptor) *Xsdt {
-        if (self.xsdt_address == 0) {
-            @panic("XSDT address is null");
-        }
-        return @ptrFromInt(paging.physToVirt(self.xsdt_address));
+    pub fn format(value: Rsdp2Descriptor, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("RSDP2 Descriptor:\n", .{});
+        try writer.print("  Signature: {s}\n", .{value.signature});
+        try writer.print("  Checksum: {x}\n", .{value.checksum});
+        try writer.print("  OEM ID: {s}\n", .{value.oem_id});
+        try writer.print("  Revision: {x}\n", .{value.revision});
+        try writer.print("  RSDT Address: {x:0>8}\n", .{value.rsdt_address});
+        try writer.print("  Length: {x}\n", .{value.length});
+        try writer.print("  XSDT Address: {x:0>16}\n", .{value.xsdt_address});
+        try writer.print("  Extended Checksum: {x}", .{value.extended_checksum});
     }
     fn validateChecksum(self: *Rsdp2Descriptor) bool {
         var sum: u8 = 0;
