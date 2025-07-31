@@ -24,8 +24,8 @@ QEMU                       := qemu-system-x86_64
 # use the `q35` machine model, emulating a more modern Intel chipset than the `pc` model, assign
 # memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
 # generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
-QEMU_COMMON_FLAGS          := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu host,+tsc,+invtsc,+tsc-deadline --enable-kvm -serial stdio -no-reboot -no-shutdown
-QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu host,+tsc,+invtsc,+tsc-deadline --enable-kvm -no-reboot -no-shutdown -S -s -serial stdio
+QEMU_COMMON_FLAGS          := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -serial stdio -no-reboot -no-shutdown
+QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -cpu qemu64 -no-reboot -no-shutdown -S -s -serial stdio
 
 $(BUILD_DIR):
 	@mkdir $(BUILD_DIR)
@@ -51,14 +51,12 @@ run: $(OVMF_DIR)/$(OVMF_FILE) $(ISO_FILE)
 .PHONY: debug
 debug: $(ISO_FILE)
 	@echo "Starting QEMU..."
-	touch debug_log
 	$(QEMU) $(QEMU_DEBUG_FLAGS) &
 	@sleep 1
 	@echo "Launching GDB..."
 	cgdb -ex "target remote :1234" \
 	    -ex "add-symbol-file kernel/zig-out/bin/kernel 0xffffffff80000000" \
 	    kernel/zig-out/bin/kernel;
-	unlink debug_log
 
 $(OVMF_DIR)/$(OVMF_FILE): | $(OVMF_DIR)
 	wget -O $(OVMF_DIR)/$(OVMF_FILE) $(OVMF_URL)
