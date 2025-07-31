@@ -26,8 +26,7 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
         const base = entry.base;
         const length = entry.length;
         const flags: []const VmObjectFlag = switch (entry.type) {
-            .usable, .bootloader_reclaimable, .acpi_reclaimable => &.{.Write},
-            .acpi_nvs => &.{ .Write, .Reserved },
+            .usable, .bootloader_reclaimable => &.{.Write},
             .framebuffer => &.{ .Write, .Mmio, .Reserved },
             else => {
                 log.debug("Skipping {s} region: phys {x:0>16}:{x}", .{ @tagName(entry.type), base, length });
