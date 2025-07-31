@@ -230,10 +230,9 @@ pub const InterruptVectors = enum(u8) {
 
 pub var global_ioapic: IoApic = undefined;
 
-pub fn init(rsdp_response: *limine.RsdpResponse) void {
+pub fn init() void {
     log.info("Initializing I/O APIC", .{});
-    const rsdp = acpi.Rsdp2Descriptor.init(rsdp_response);
-    const xsdt = rsdp.getXSDT();
+    const xsdt = acpi.global_xsdt orelse @panic("XSDT has not been initialized yet");
     const madt_signature = "APIC";
     // find the MADT table
     const madt_hdr = xsdt.findSdtHeader(madt_signature) orelse @panic("MADT not found in XSDT");
