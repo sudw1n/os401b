@@ -15,6 +15,7 @@ const pmm = lib.pmm;
 const paging = lib.paging;
 const vmm_heap = lib.vmm_heap;
 const vmm = lib.vmm;
+const allocator = lib.allocator;
 
 const acpi = lib.acpi;
 
@@ -155,14 +156,17 @@ fn init() Error!void {
     if (rsdp_response.address == 0) {
         @panic("RSDP address is null");
     }
+    try term.logStepBegin("Initializing ACPI subsystem", .{});
+    acpi.init(rsdp_response);
+    try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing the Kernel Heap Allocator", .{});
-    lib.allocator.init(HEAP_SIZE);
+    allocator.init(HEAP_SIZE);
     try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing APICs", .{});
     lapic.init();
-    ioapic.init(rsdp_response);
+    ioapic.init();
     try term.logStepEnd(true);
 
     try term.logStepBegin("Initializing the Keyboard", .{});
