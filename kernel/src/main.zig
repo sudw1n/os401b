@@ -76,7 +76,7 @@ pub const std_options = std.Options{
         },
         .{
             .scope = .scheduler,
-            .level = .debug,
+            .level = .info,
         },
     },
     .logFn = serial.log,
@@ -177,6 +177,35 @@ fn init() Error!void {
     pit.init();
     try term.logStepEnd(true);
 
+    try term.logStepBegin("Initializing the Scheduler", .{});
+    scheduler.init();
+    var g = scheduler.global_scheduler orelse @panic("Scheduler not initialized");
+    g.scheduleNewThread(
+        "idle",
+        &idle,
+        &dummy_arg,
+    ) catch |err| {
+        log.err("Failed to start idle thread: {}", .{err});
+        @panic("Failed to start idle thread");
+    };
+    //  g.scheduleNewThread(
+    //      "kproc1",
+    //      kproc1,
+    //      &dummy_arg,
+    //  ) catch |err| {
+    //      log.err("Failed to start kproc1 thread: {}", .{err});
+    //      @panic("Failed to start kproc1 thread");
+    //  };
+    //  g.scheduleNewThread(
+    //      "kproc2",
+    //      kproc2,
+    //      &dummy_arg,
+    //  ) catch |err| {
+    //      log.err("Failed to start kproc2 thread: {}", .{err});
+    //      @panic("Failed to start kproc2 thread");
+    //  };
+    try term.logStepEnd(true);
+
     try term.logStepBegin("Unmasking IRQ lines", .{});
     ioapic.routeVectors();
     try term.logStepEnd(true);
@@ -203,36 +232,7 @@ fn shell() Error!void {
             // end of input, check if it matches the target input
             buffer[input_count] = 0; // null-terminate the string
             if (std.mem.eql(u8, buffer[0..input_count], target_input)) {
-                try term.print("\nStarting scheduler...\n", .{});
-                asm volatile ("cli"); // disable interrupts
-                scheduler.init();
-                var g = scheduler.global_scheduler orelse @panic("Scheduler not initialized");
-                g.scheduleNewThread(
-                    "idle",
-                    idle,
-                    &dummy_arg,
-                ) catch |err| {
-                    log.err("Failed to start idle thread: {}", .{err});
-                    @panic("Failed to start idle thread");
-                };
-                //  g.scheduleNewThread(
-                //      "kproc1",
-                //      kproc1,
-                //      &dummy_arg,
-                //  ) catch |err| {
-                //      log.err("Failed to start kproc1 thread: {}", .{err});
-                //      @panic("Failed to start kproc1 thread");
-                //  };
-                //  g.scheduleNewThread(
-                //      "kproc2",
-                //      kproc2,
-                //      &dummy_arg,
-                //  ) catch |err| {
-                //      log.err("Failed to start kproc2 thread: {}", .{err});
-                //      @panic("Failed to start kproc2 thread");
-                //  };
-                asm volatile ("sti"); // disable interrupts
-                break; // exit the loop to start the process
+                try term.print("Not implemented yet...\n", .{});
             } else {
                 try term.print("Unknown command: ", .{});
                 try term.print("{s}", .{buffer[0..input_count]});
