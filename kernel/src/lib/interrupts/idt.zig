@@ -231,8 +231,8 @@ export fn interruptDispatch(frame: *InterruptFrame) ?*InterruptFrame {
                 // picks a next thread, loads its page‑tables, and returns
                 // a pointer to that thread's CpuContext
                 const new_ctx = g.schedule(frame);
-                log.info("Old context:\n{}", .{frame});
-                log.info("New context:\n{}", .{new_ctx});
+                log.debug("Old context:\n{}", .{frame});
+                log.debug("New context:\n{}", .{new_ctx});
                 return new_ctx;
             }
             return null;
