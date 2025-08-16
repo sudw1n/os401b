@@ -155,7 +155,7 @@ pub const PhysicalMemoryManager = struct {
     }
     /// Deallocate the given physical page address.
     ///
-    /// Returns Error if the page is already free (double-free).
+    /// Panics if the page is already free (double-free).
     pub fn free(self: *PhysicalMemoryManager, bytes: []u8) void {
         const size = bytes.len;
         const pages = addressToPage(size);
