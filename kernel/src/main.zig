@@ -179,31 +179,6 @@ fn init() Error!void {
 
     try term.logStepBegin("Initializing the Scheduler", .{});
     scheduler.init();
-    var g = scheduler.global_scheduler orelse @panic("Scheduler not initialized");
-    g.scheduleNewThread(
-        "idle",
-        &idle,
-        &dummy_arg,
-    ) catch |err| {
-        log.err("Failed to start idle thread: {}", .{err});
-        @panic("Failed to start idle thread");
-    };
-    //  g.scheduleNewThread(
-    //      "kproc1",
-    //      kproc1,
-    //      &dummy_arg,
-    //  ) catch |err| {
-    //      log.err("Failed to start kproc1 thread: {}", .{err});
-    //      @panic("Failed to start kproc1 thread");
-    //  };
-    //  g.scheduleNewThread(
-    //      "kproc2",
-    //      kproc2,
-    //      &dummy_arg,
-    //  ) catch |err| {
-    //      log.err("Failed to start kproc2 thread: {}", .{err});
-    //      @panic("Failed to start kproc2 thread");
-    //  };
     try term.logStepEnd(true);
 
     try term.logStepBegin("Unmasking IRQ lines", .{});
@@ -232,7 +207,8 @@ fn shell() Error!void {
             // end of input, check if it matches the target input
             buffer[input_count] = 0; // null-terminate the string
             if (std.mem.eql(u8, buffer[0..input_count], target_input)) {
-                try term.print("Not implemented yet...\n", .{});
+                scheduler.spawn("kthread1", &kthread1, dummy_arg);
+                scheduler.spawn("kthread2", &kthread2, dummy_arg);
             } else {
                 try term.print("Unknown command: ", .{});
                 try term.print("{s}", .{buffer[0..input_count]});
@@ -251,23 +227,11 @@ fn shell() Error!void {
     }
 }
 
-export var dummy_arg: u64 = 0xdeadbeef; // dummy argument for the idle thread
-
-export fn idle(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
-    while (true) {
-        // idle loop, just halt the CPU
-        cpu.hlt();
-    }
+var dummy_arg: *anyopaque = undefined;
+fn kthread1(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
+    term.print("kthread1 is running...\n", .{}) catch @panic("Failed to print from kthread1");
 }
 
-export fn kproc1(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
-    while (true) {
-        term.print("kproc1 is running...\n", .{}) catch @panic("Failed to print from kproc1");
-    }
-}
-
-export fn kproc2(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
-    while (true) {
-        term.print("kproc2 is running...\n", .{}) catch @panic("Failed to print from kproc2");
-    }
+fn kthread2(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {
+    term.print("kthread2 is running...\n", .{}) catch @panic("Failed to print from kthread2");
 }
