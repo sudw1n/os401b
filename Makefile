@@ -25,7 +25,7 @@ QEMU                       := qemu-system-x86_64
 # memory, instruct the VM to boot from the CD-ROM (drive `d`) first, ‘qemu64’ which provides a
 # generic cpu with as many host-supported features and we and specify the CD-ROM ISO file
 QEMU_COMMON_FLAGS          := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -bios $(OVMF_DIR)/$(OVMF_FILE) -cpu qemu64 -serial stdio -no-reboot -no-shutdown
-QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -bios $(OVMF_DIR)/$(OVMF_FILE) -cpu qemu64 -no-reboot -no-shutdown -S -s -serial stdio
+QEMU_DEBUG_FLAGS           := -M q35 -m $(RAM_SIZE_MiB)M -boot d -cdrom $(ISO_FILE) -bios $(OVMF_DIR)/$(OVMF_FILE) -cpu qemu64 -no-reboot -no-shutdown -S -s -serial file:debug_log
 
 $(BUILD_DIR):
 	@mkdir $(BUILD_DIR)
