@@ -122,6 +122,11 @@ pub const PageTableEntry = packed struct {
         }
     }
 
+    pub fn getFlags(self: PageTableEntry) u64 {
+        // Return only the flags, not the frame address.
+        return self.entry & ~bit_12_51_mask;
+    }
+
     /// Clears (removes) the given flags.
     pub fn clearFlags(self: *PageTableEntry, flags: []const PageTableEntryFlag) void {
         for (flags) |flag| {
@@ -185,12 +190,21 @@ pub const PageTable = struct {
         }
     }
 
+    // Check if all entries are zero (not mapped).
     pub fn isEmpty(self: *PageTable) bool {
-        // Check if all entries are zero (not mapped).
+        // We could check for the present bit in each entry and exit the loop if one of them has the
+        // bit set. But this approach avoids branching within each iteration. A stack of bitwise ops
+        // followed by a single compare and jump would be faster (in most cases) than a stack of
+        // compare and jumps.
+
+        var ptes: PageTableEntry = .{ .entry = 0 };
+
+        // OR all entries together.
         for (self.entries) |entry| {
-            if (entry.checkFlag(.Present)) return false;
+            ptes.entry |= entry.entry;
         }
-        return true;
+        // check if the present bit in the combined entry is set
+        return !ptes.checkFlag(.Present);
     }
 };
 
