@@ -30,7 +30,7 @@ pub fn handle() void {
     lapic.global_lapic.sendEoi();
 }
 
-pub const TICKS_PER_SEC: u32 = 1000; // 1 ms tick
+pub const TICKS_PER_SEC: u32 = 100; // 10 ms tick
 pub fn sleep(ms: u32) void {
     const total_ticks_per_sec = std.math.mulWide(u32, ms, TICKS_PER_SEC);
     const wait_ticks = std.math.divCeil(u64, total_ticks_per_sec, std.time.ms_per_s) catch @panic("sleep: division error");
