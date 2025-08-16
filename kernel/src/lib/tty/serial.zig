@@ -93,13 +93,13 @@ pub const SerialWriter = struct {
     }
 
     fn writeStr(s: []const u8) void {
-        const old_rflags = (&lock).acquireFlagsSave();
+        const old_rflags = lock.acquireFlagsSave();
         for (s) |c| {
             while (isTransmitEmpty()) {
                 asm volatile ("pause");
             }
             cpu.out(u8, PORT, c);
         }
-        (&lock).releaseFlagsRestore(old_rflags);
+        lock.releaseFlagsRestore(old_rflags);
     }
 };

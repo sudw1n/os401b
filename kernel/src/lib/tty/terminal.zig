@@ -89,7 +89,7 @@ pub fn logStepEnd(success: bool) TtyError!void {
 }
 
 fn writeStr(bytes: []const u8) TtyError!void {
-    const rflags = (&lock).acquireFlagsSave();
+    const rflags = lock.acquireFlagsSave();
     for (bytes) |char| {
         switch (char) {
             '\r', '\n' => try newline(),
@@ -98,7 +98,7 @@ fn writeStr(bytes: []const u8) TtyError!void {
             else => try writeChar(char),
         }
     }
-    (&lock).releaseFlagsRestore(rflags);
+    lock.releaseFlagsRestore(rflags);
 }
 
 fn writeChar(char: u8) TtyError!void {
