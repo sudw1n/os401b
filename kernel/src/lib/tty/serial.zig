@@ -21,6 +21,7 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
+    const old_rflags = (&lock).acquireFlagsSave();
     // The scope .none and message_level .debug stuff was implemented for one special case
     // (printing out the interrupt stack frame) and is not used anywhere else.
     // TODO: find a better way
@@ -28,6 +29,7 @@ pub fn log(
     const prefix = "[" ++ comptime message_level.asText() ++ "] " ++ scope_prefix;
     const fmt = if (message_level == .debug) format else prefix ++ format;
     serial.print(fmt ++ "\n", args) catch return;
+    (&lock).releaseFlagsRestore(old_rflags);
 }
 
 pub const SerialError = error{
@@ -93,13 +95,11 @@ pub const SerialWriter = struct {
     }
 
     fn writeStr(s: []const u8) void {
-        const old_rflags = lock.acquireFlagsSave();
         for (s) |c| {
             while (isTransmitEmpty()) {
                 asm volatile ("pause");
             }
             cpu.out(u8, PORT, c);
         }
-        lock.releaseFlagsRestore(old_rflags);
     }
 };

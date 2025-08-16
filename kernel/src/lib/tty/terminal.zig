@@ -53,7 +53,9 @@ pub fn init(raw_framebuffer: *limine.FramebufferResponse, foreground_color: Colo
 
 /// Write to screen with standard formatting
 pub fn print(comptime fmt: []const u8, args: anytype) TtyError!void {
+    const rflags = (&lock).acquireFlagsSave();
     std.fmt.format(writer, fmt, args) catch return TtyError.PrintError;
+    (&lock).releaseFlagsRestore(rflags);
 }
 
 /// Write to screen with standard formatting, with the specified color
@@ -89,7 +91,6 @@ pub fn logStepEnd(success: bool) TtyError!void {
 }
 
 fn writeStr(bytes: []const u8) TtyError!void {
-    const rflags = lock.acquireFlagsSave();
     for (bytes) |char| {
         switch (char) {
             '\r', '\n' => try newline(),
@@ -98,7 +99,6 @@ fn writeStr(bytes: []const u8) TtyError!void {
             else => try writeChar(char),
         }
     }
-    lock.releaseFlagsRestore(rflags);
 }
 
 fn writeChar(char: u8) TtyError!void {
