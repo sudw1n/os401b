@@ -15,6 +15,10 @@ const ThreadFunction = process.ThreadFunction;
 const log = std.log.scoped(.scheduler);
 
 pub var global_scheduler: ?*Scheduler = null;
+var kernel_process: *Process = undefined; // the kernel process, which is the first process created
+
+var dummy_arg: u64 = undefined; // dummy argument for the dummy thread
+fn dummyEntryFn(_: *anyopaque) callconv(.{ .x86_64_sysv = .{} }) void {}
 
 pub fn init() void {
     // Initialize the scheduler, set up the first process, etc.
@@ -25,6 +29,27 @@ pub fn init() void {
     };
     var g = global_scheduler.?; // safe to unwrap because we just allocated it
     g.init(allocator);
+
+    // create and register the currently running kernel code as the first process
+    kernel_process = allocator.create(Process) catch |err| {
+        log.err("Failed to allocate initial kernel process: {}", .{err});
+        @panic("Kernel process allocation failed");
+    };
+    kernel_process.initKernel("kernel", 0);
+    spawn("kernel-main", &dummyEntryFn, &dummy_arg);
+}
+
+// Spawn a new kernel thread
+pub fn spawn(
+    name: []const u8,
+    entry_fn: ThreadFunction,
+    entry_fn_arg: *anyopaque,
+) void {
+    var g = global_scheduler.?;
+    // add a new thread to the "kernel" process
+    const kt = kernel_process.addThread(name, entry_fn, entry_fn_arg);
+    g.registerThread(kt);
+    log.debug("{}", .{kernel_process});
 }
 
 pub fn yield() void {
@@ -32,7 +57,7 @@ pub fn yield() void {
     asm volatile (
         \\int %[vector]
         :
-        : [vector] "i" (ioapic.InterruptVectors.PitTimer.get()),
+        : [vector] "i" (0x20),
     );
 }
 
