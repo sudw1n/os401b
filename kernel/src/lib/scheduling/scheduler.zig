@@ -64,7 +64,7 @@ pub fn yield() void {
 pub const Scheduler = struct {
     allocator: std.mem.Allocator,
     // TODO: make this a truly circular list
-    threads: ?*Thread = null, // points to the first thread in the ring
+    runqueue: ?*Thread = null, // points to the first thread in the list
     current: ?*Thread = null, // currently running thread
     next_pid: u64 = 0, // used to assign unique PIDs to processes
 
@@ -80,7 +80,7 @@ pub const Scheduler = struct {
         entry_fn: ThreadFunction,
         entry_fn_arg: *anyopaque,
     ) !void {
-        log.info("Scheduling new thread: {s}", .{name});
+        log.info("Scheduling new thread: \"{s}\"", .{name});
         // allocate a new process
         const p = try self.allocator.create(Process);
         const pid = self.next_pid;
@@ -95,59 +95,67 @@ pub const Scheduler = struct {
     /// Heart of the scheduler: save the old context, pick the next READY,
     /// clean out any DEAD processes as we go, and return its context.
     pub fn schedule(self: *Scheduler, context: *CpuContext) *CpuContext {
+
+        // disable interrupts to prevent context switch during this operation
         const old = self.current orelse {
+            @branchHint(.unlikely);
             log.err("No current thread to schedule", .{});
             @panic("No current thread to schedule");
         };
 
-        old.context = context.*;
-        if (old.state != .Dead) {
-            old.state = .Ready;
-        }
-
         // find a non-dead process to run
-        var candidate = old.next orelse self.threads;
-        while (candidate) |c| {
-            if (c.state != .Dead) break;
-            log.debug("Skipping dead thread \"{s}\" (TID: {d})", .{ c.name, c.tid });
-            candidate = c.next;
-            self.unregisterThread(c);
-        }
-
-        // if I fell off the end, go back to the head
-        const next_thread = if (candidate) |c| c else if (self.threads) |h| h else {
-            log.err("No non-dead threads available to schedule", .{});
+        var candidate = old.next_in_runqueue orelse self.runqueue orelse {
+            @branchHint(.unlikely);
+            log.err("No threads available to schedule", .{});
             @panic("no threads left to run");
         };
+        while (candidate.state == .Dead) {
+            log.debug("Thread \"{s}\" (TID: {d}) is dead", .{ candidate.name, candidate.tid });
+            candidate = self.unregisterThread(candidate) orelse {
+                @branchHint(.unlikely);
+                log.err("No threads left to run", .{});
+                @panic("no threads left to run");
+            };
+        }
 
-        // mark the non-dead process as running
+        // If the new thread chosen is the same as old, just return the incoming context pointer.
+        // That leaves us on the same stack and effectively does nothing.
+        if (candidate == old) {
+            return context;
+        }
+
+        old.context = context.*;
+        if (old.state != .Dead) old.state = .Ready;
+
+        const next_thread = candidate;
+
         next_thread.state = .Running;
         self.current = next_thread;
 
         // load the new process's page tables
-        log.debug("Switching to process \"{s}\" with PID {d}, thread \"{s}\" with (TID: {d})", .{ next_thread.parent.name, next_thread.parent.pid, next_thread.name, next_thread.tid });
+        log.debug("Switching to process \"{s}\" (PID: {d}), thread \"{s}\" (TID: {d})", .{ next_thread.parent.name, next_thread.parent.pid, next_thread.name, next_thread.tid });
         next_thread.parent.vmm.activate();
         return &next_thread.context;
     }
 
-    /// Insert `t` in the ring at the front
+    /// Insert `t` in the list at the front
     pub fn registerThread(self: *Scheduler, t: *Thread) void {
         log.info("Registering thread \"{s}\" (TID: {d})", .{ t.name, t.tid });
-        if (self.threads) |first| {
-            log.debug("Ring non-empty, head is \"{s}\" (TID: {d}), appending", .{ first.name, first.tid });
+        if (self.runqueue) |first| {
+            log.debug("list non-empty, head is \"{s}\" (TID: {d}), appending", .{ first.name, first.tid });
             var last = first;
-            while (last.next) |n| {
+            while (last.next_in_runqueue) |n| {
                 last = n;
             }
-            last.next = t;
+            last.next_in_runqueue = t;
         } else {
-            log.debug("Ring empty, making it the head/current", .{});
-            self.threads = t; // first thread in the ring
+            log.debug("list empty, making it the head/current", .{});
+            self.runqueue = t; // first thread in the list
             // if this was the first thread, then it should mean our current is null, so initialize
             // it
             self.current = t;
         }
-        t.next = null;
+        t.next_in_runqueue = null;
     }
 
     pub fn threadExit(self: *Scheduler) void {
@@ -165,51 +173,53 @@ pub const Scheduler = struct {
         }
     }
 
-    /// Remove `t` from the ring. Must not be the only element.
-    fn unregisterThread(self: *Scheduler, t: *Thread) void {
-        log.debug("Unregistering thread \"{s}\" (TID: {d})", .{ t.name, t.tid });
+    /// Remove `t` from the list. Must not be the only element.
+    fn unregisterThread(self: *Scheduler, t: *Thread) ?*Thread {
+        log.info("Unregistering thread \"{s}\" (TID: {d})", .{ t.name, t.tid });
+
+        std.debug.assert(t.state != .Running); // we should never unregister a running thread
 
         // must have at least one thread
-        const first = self.threads orelse {
-            log.err("No threads in the ring to delete", .{});
-            @panic("No threads in the ring to delete");
+        const first = self.runqueue orelse {
+            log.err("No threads in the list to delete", .{});
+            @panic("No threads in the list to delete");
         };
 
-        // special case: only one thread in the ring
-        if (first == t and t.next == null) {
-            self.threads = null; // this was the only thread, so we can clear the ring
-            self.current = null;
+        var successor: ?*Thread = null;
+
+        // special case: only one thread in the list
+        if (first == t) {
+            successor = t.next_in_runqueue; // could be null
+            if (t.next_in_runqueue == null) {
+                self.runqueue = null; // this was the only thread, so we can clear the list
+                self.current = null;
+            } else {
+                self.runqueue = t.next_in_runqueue; // advance the head
+                // if we removed the running thread, pick its successor
+                if (self.current == t) self.current = t.next_in_runqueue;
+            }
         } else {
-            // find the predecessor of `t`
             var prev = first;
-            while (prev.next) |n| {
+            while (prev.next_in_runqueue) |n| {
                 if (n == t) break;
                 prev = n;
             }
-            if (prev.next != t) {
-                log.err("Thread \"{s}\" (TID: {d}) not found in the ring", .{ t.name, t.tid });
-                @panic("Thread to unregister not found in the ring");
+            if (prev.next_in_runqueue != t) {
+                log.err("Thread \"{s}\" (TID: {d}) not found in the list", .{ t.name, t.tid });
+                @panic("Thread to unregister not found in the list");
             }
-            prev.next = t.next; // remove `t` from the ring
-
-            if (first == t) {
-                // if we removed the head, advance it
-                self.threads = t.next;
-            }
+            successor = t.next_in_runqueue orelse self.runqueue; // if tail to be removed, wrap around to head
+            prev.next_in_runqueue = t.next_in_runqueue;
 
             // if we removed the running thread, pick its successor
-            if (self.current == t) {
-                self.current = t.next orelse blk: {
-                    // t.next is guaranteed non-null here, because we handled the 1‑element case above
-                    @branchHint(.unlikely);
-                    break :blk self.threads;
-                };
-            }
+            if (self.current == t) self.current = successor;
         }
 
         // detach it completely and let parent clean it up
-        t.next = null;
+        t.next_in_runqueue = null;
         const parent = t.parent;
         parent.removeThread(t);
+
+        return successor;
     }
 };
