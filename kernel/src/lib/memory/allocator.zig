@@ -8,7 +8,7 @@ const log = std.log.scoped(.allocator);
 pub var global_allocator: Allocator = undefined;
 
 pub fn init(size: u64) void {
-    global_allocator = Allocator.init(&vmm.global_vmm, size);
+    global_allocator = Allocator.init(vmm.global_vmm, size);
 }
 
 pub fn allocator() std.mem.Allocator {
