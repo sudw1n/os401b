@@ -25,6 +25,11 @@ pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: 
     // use the HHDM address of the first free frame so we don't remap
     // any pages already in use
     const virt_start = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
+    // since the kernel lives in HHDM, its *virtual* address space extends up to
+    // the top of the 48-bit canonical high-half region, rounded down to a page
+    const last_addr = ~@as(u64, 0);
+    const virt_end = paging.pageFloor(last_addr);
+
     global_vmm.init(virt_start, virt_end, allocator);
 
     // map physical frames
