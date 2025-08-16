@@ -40,7 +40,8 @@ pub const Thread = struct {
     context: CpuContext,
     wake_time: ?u64,
 
-    next: ?*Thread = null,
+    next_in_process: ?*Thread = null,
+    next_in_runqueue: ?*Thread = null,
 
     pub fn init(self: *Thread, parent: *Process, name: []const u8, tid: u64, state: State) void {
         self.* = Thread{
@@ -60,7 +61,7 @@ pub const Thread = struct {
     }
 
     pub fn initContext(self: *Thread, function: ThreadFunction, arg: *anyopaque) void {
-        log.debug("Initializing thread context for {s} (TID: {d})", .{ self.name, self.tid });
+        log.debug("Initializing thread context for \"{s}\" (TID: {d})", .{ self.name, self.tid });
         @memset(@as([*]u8, @ptrCast(@alignCast(&self.context)))[0..@sizeOf(CpuContext)], 0); // Clear the context
         self.initStack();
         self.initCode(function, arg);
@@ -68,16 +69,64 @@ pub const Thread = struct {
     }
 
     pub fn deinit(self: *Thread) void {
+        self.state = State.Dead;
+        self.next_in_process = null;
         // Clear the thread's stack
         self.parent.vmm.free(self.stack_guard_page);
         self.parent.vmm.free(self.stack);
     }
 
     pub fn sleep(self: *Thread, duration_ms: u64) void {
-        log.info("Thread {s} (TID: {d}) is going to sleep for {d} ms", .{ self.name, self.tid, duration_ms });
+        log.info("Thread \"{s}\" (TID: {d}) is going to sleep for {d} ms", .{ self.name, self.tid, duration_ms });
         self.state = State.Sleeping;
         self.wake_time = pit.getUptimeMs() + duration_ms;
         scheduler.yield();
+    }
+
+    pub fn format(value: *Thread, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        const stack_start = @intFromPtr(value.stack.ptr);
+        const stack_end_excl = stack_start + value.stack.len;
+
+        const guard_start = @intFromPtr(value.stack_guard_page.ptr);
+        const guard_end_excl = guard_start + value.stack_guard_page.len;
+
+        try writer.print("  Thread @ {x:0>16} {{\n", .{@intFromPtr(value)});
+        try writer.print("   Name: \"{s}\"\n", .{value.name});
+        try writer.print("   TID: {d}\n", .{value.tid});
+        try writer.print("   State: {s}\n", .{@tagName(value.state)});
+
+        // Parent process
+        try writer.print("   Parent PID: {d}\n", .{value.parent.pid});
+        try writer.print("   Parent Name: \"{s}\"\n", .{value.parent.name});
+
+        // Stack info as address range and size
+        try writer.print("   Stack: [{x:0>16}, {x:0>16}) (len: {x})\n", .{ stack_start, stack_end_excl, value.stack.len });
+
+        // Guard page info
+        try writer.print("   Guard Page: [{x:0>16}, {x:0>16}) (len: {x})\n", .{ guard_start, guard_end_excl, value.stack_guard_page.len });
+
+        // Context pointer (don't dump full registers unless you want to)
+        const ctx_addr = @intFromPtr(&value.context);
+        try writer.print("   Context: {x:0>16}\n", .{ctx_addr});
+
+        // Wake time
+        if (value.wake_time) |t| {
+            try writer.print("   Wake Time: {d}\n", .{t});
+        } else {
+            try writer.print("   Wake Time: <none>\n", .{});
+        }
+
+        // Next pointer
+        if (value.next_in_process) |n| {
+            try writer.print("   Next: {x:0>16}\n", .{@intFromPtr(n)});
+        } else {
+            try writer.print("   Next: <null>\n", .{});
+        }
+
+        try writer.print("  }}", .{});
     }
 
     // will call the thread's entry point and then exit the thread
@@ -104,14 +153,14 @@ pub const Thread = struct {
 
         const parent = self.parent;
 
-        log.debug("Allocating stack for thread {s} (TID: {d})", .{ self.name, self.tid });
+        log.debug("Allocating stack for thread \"{s}\" (TID: {d})", .{ self.name, self.tid });
         self.stack = parent.vmm.allocEnd(STACK_SIZE, &.{
             .Write,
         }, null) catch |err| {
             log.err("Failed to allocate stack for thread: {}", .{err});
             @panic("Failed to allocate stack for thread");
         };
-        log.debug("Allocating stack guard page for thread {s} (TID: {d})", .{ self.name, self.tid });
+        log.debug("Allocating stack guard page for thread \"{s}\" (TID: {d})", .{ self.name, self.tid });
         self.stack_guard_page = parent.vmm.allocEnd(0x1000, &.{.Disabled}, null) catch |err| {
             log.err("Failed to allocate stack guard page for thread: {}", .{err});
             @panic("Failed to allocate stack guard page for thread");
@@ -123,10 +172,10 @@ pub const Thread = struct {
     }
 };
 
-/// A single process (or the idle task)
+/// A single process
 pub const Process = struct {
     /// The virtual memory manager for this process.
-    vmm: VirtualMemoryManager,
+    vmm: *VirtualMemoryManager,
 
     allocator: std.mem.Allocator,
 
@@ -139,18 +188,27 @@ pub const Process = struct {
 
     threads: ?*Thread = null,
 
-    // On AMD64 the entire 48-bit canonical address space is split in two halves by bit 47:
-
-    // Low half (PML4 indices 0–255): user‐space
-    // High half (PML4 indices 256–511): kernel
-    //
-    // This means that the user‐space virtual address space range is:
-    // 0x0000_0000_0000_0000  ...  0x0000_7FFF_FFFF_FFFF
-
     pub fn init(self: *Process, name: []const u8, pid: u64) void {
-        log.info("Initializing process {s} (PID: {d})", .{ name, pid });
+        log.info("Initializing process \"{s}\" (PID: {d})", .{ name, pid });
 
-        const vmm_instance = VirtualMemoryManager.init(VIRT_BASE_START, VIRT_BASE_END, heap_allocator.allocator());
+        const allocator = heap_allocator.allocator();
+        var vmm_instance = allocator.create(VirtualMemoryManager) catch |err| {
+            log.err("Failed to allocate VirtualMemoryManager for process \"{s}\" (PID: {d}): {}", .{
+                name,
+                pid,
+                err,
+            });
+            @panic("Process VMM allocation failed");
+        };
+
+        // On AMD64 the entire 48-bit canonical address space is split in two halves by bit 47:
+
+        // Low half (PML4 indices 0–255): user‐space
+        // High half (PML4 indices 256–511): kernel
+        //
+        // This means that the user‐space virtual address space range is:
+        // 0x0000_0000_0000_0000  ...  0x0000_7FFF_FFFF_FFFF
+        vmm_instance.init(VIRT_BASE_START, VIRT_BASE_END, allocator);
 
         // The kernel lives entirely in the higher half (PML4 entries 256..511), and we want the kernel to exist in all
         // address spaces.
@@ -172,6 +230,21 @@ pub const Process = struct {
         self.* = Process{
             .name = undefined,
             .vmm = vmm_instance,
+            .allocator = allocator,
+            .pid = pid,
+        };
+
+        const len = @min(NAME_MAX_LEN, name.len);
+        @memcpy(self.name[0..len], name[0..len]);
+        @memset(self.name[len..], 0); // Null-terminate the name
+    }
+
+    /// Initialize a kernel process with the given name and PID.
+    pub fn initKernel(self: *Process, name: []const u8, pid: u64) void {
+        log.info("Initializing kernel process \"{s}\" (PID: {d})", .{ name, pid });
+        self.* = Process{
+            .name = undefined,
+            .vmm = vmm_lib.global_vmm,
             .allocator = heap_allocator.allocator(),
             .pid = pid,
         };
@@ -182,12 +255,12 @@ pub const Process = struct {
     }
 
     pub fn addThread(self: *Process, name: []const u8, function: ThreadFunction, arg: *anyopaque) *Thread {
-        log.info("Adding thread {s} to process {s} (PID: {d})", .{ name, self.name, self.pid });
+        log.info("Adding thread \"{s}\" to process \"{s}\" (PID: {d})", .{ name, self.name, self.pid });
         const allocator = self.allocator;
 
         // Allocate a new thread
         const thread = allocator.create(Thread) catch |err| {
-            log.err("Failed to allocate thread for process {s} (PID: {d}): {}", .{
+            log.err("Failed to allocate thread for process \"{s}\" (PID: {d}): {}", .{
                 self.name,
                 self.pid,
                 err,
@@ -201,10 +274,10 @@ pub const Process = struct {
             break :blk tid;
         };
 
-        thread.init(self, name, tid, State.Ready);
+        thread.init(self, name, tid, .Ready);
         thread.initContext(function, arg);
 
-        log.info("Adding thread {s} (TID: {d}) to process {s} (PID: {d})", .{
+        log.info("Adding thread \"{s}\" (TID: {d}) to process \"{s}\" (PID: {d})", .{
             name,
             tid,
             self.name,
@@ -217,10 +290,10 @@ pub const Process = struct {
             self.threads = thread;
         } else {
             var current = self.threads.?;
-            while (current.next) |next| {
+            while (current.next_in_process) |next| {
                 current = next;
             }
-            current.next = thread; // append to the end of the list
+            current.next_in_process = thread; // append to the end of the list
         }
 
         return thread;
@@ -232,12 +305,12 @@ pub const Process = struct {
 
         // Ensure the thread is not running before removing it
         if (thread.state == .Running) {
-            log.err("Cannot remove a running thread: {s} (TID: {d})", .{ thread.name, thread.tid });
+            log.err("Cannot remove a running thread: \"{s}\" (TID: {d})", .{ thread.name, thread.tid });
             @panic("Attempt to remove a running thread");
         }
 
         if (thread.parent != self) {
-            log.err("Thread {s} (TID: {d}) does not belong to process {s} (PID: {d})", .{
+            log.err("Thread \"{s}\" (TID: {d}) does not belong to process \"{s}\" (PID: {d})", .{
                 thread.name,
                 thread.tid,
                 self.name,
@@ -246,61 +319,60 @@ pub const Process = struct {
             @panic("Attempt to remove a thread that does not belong to the given process");
         }
 
-        log.info("Removing thread {s} (TID: {d}) from process {s} (PID: {d})", .{
+        log.info("Removing thread \"{s}\" (TID: {d}) from process \"{s}\" (PID: {d})", .{
             thread.name,
             thread.tid,
             self.name,
             self.pid,
         });
 
-        var found = false;
-
         // nothing to do if the list is empty
-        const first = self.threads orelse {
-            log.err("No threads to remove in process {s} (PID: {d})", .{
+        const head = self.threads orelse {
+            log.err("No threads to remove in process \"{s}\" (PID: {d})", .{
                 self.name,
                 self.pid,
             });
             @panic("Attempt to remove a thread from an empty process");
         };
 
-        if (first == thread) {
-            found = true; // We found the thread to remove
+        if (head == thread) {
             // If the thread to remove is the first one, we need to update the head of the list
-            self.threads = thread.next; // Update the head to the next thread
+            self.threads = thread.next_in_process; // Update the head to the next thread
         } else {
-            var current = first;
-            while (current.next) |next| {
-                if (next == thread) {
-                    // Found the thread to remove, update the next pointer
-                    current.next = next.next;
-                    found = true; // We found the thread to remove
-                    break; // Exit the loop after removing the thread
-                }
-                current = next; // Move to the next thread
+            var prev = head;
+            var curr = head.next_in_process;
+            while (curr) |c| {
+                if (c == thread) break; // Found the thread to remove, update the next pointer
+                prev = c;
+                curr = c.next_in_process;
             }
-        }
 
-        if (!found) {
-            log.err("Thread {s} (TID: {d}) not found in process {s} (PID: {d})", .{
-                thread.name,
-                thread.tid,
-                self.name,
-                self.pid,
-            });
-            @panic("Attempt to remove a non-existent thread");
+            if (curr == null) {
+                log.err("Thread \"{s}\" (TID: {d}) not found in process \"{s}\" (PID: {d})", .{
+                    thread.name,
+                    thread.tid,
+                    self.name,
+                    self.pid,
+                });
+                @panic("Attempt to remove a non-existent thread");
+            }
+
+            prev.next_in_process = curr.?.next_in_process;
         }
 
         // Deinitialize the thread
         thread.deinit();
+        self.allocator.destroy(thread);
 
-        const allocator = self.allocator;
-        allocator.destroy(thread);
+        // decrement next_tid if the thread was the last one created
+        if (thread.tid == self.next_tid - 1) {
+            self.next_tid -= 1;
+        }
 
         // if removing the last thread results in the process having no threads, then we
         // deinitialize the process as well
         if (self.threads == null) {
-            log.info("Process {s} (PID: {d}) has no more threads, deinitializing process", .{
+            log.info("Process \"{s}\" (PID: {d}) has no more threads, deinitializing process", .{
                 self.name,
                 self.pid,
             });
@@ -309,8 +381,39 @@ pub const Process = struct {
     }
 
     pub fn deinit(self: *Process) void {
-        log.info("Deinitializing process {s} (PID: {d})", .{ self.name, self.pid });
+        log.info("Deinitializing process \"{s}\" (PID: {d})", .{ self.name, self.pid });
         self.vmm.deinit();
+        self.allocator.destroy(self.vmm);
+    }
+
+    pub fn format(value: *Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("Process @ {x:0>16} {{\n", .{@intFromPtr(value)});
+        try writer.print(" Name: \"{s}\"\n", .{value.name});
+        try writer.print(" PID: {d}\n", .{value.pid});
+
+        // VMM / allocator pointers (addresses are typically what you want)
+        try writer.print(" VMM: {x:0>16}\n", .{@intFromPtr(value.vmm)});
+        // std.mem.Allocator is a handle; show the pointer to its internals for bearings
+        try writer.print(" Allocator: {x:0>16}\n", .{@intFromPtr(value.allocator.ptr)});
+
+        // Threads summary
+        try writer.print(" Threads: {d}", .{value.next_tid});
+        if (value.threads) |t| {
+            try writer.print(" (head @ {x:0>16})", .{@intFromPtr(t)});
+        }
+        try writer.print(" [\n", .{});
+
+        var current = value.threads;
+        while (current) |thread| {
+            try writer.print("{},\n", .{thread});
+            current = thread.next_in_process;
+        }
+        try writer.print(" ]\n", .{});
+
+        try writer.print("}}", .{});
     }
 };
 
