@@ -13,12 +13,19 @@ const PageTableEntryFlag = paging.PageTableEntryFlag;
 /// The kernel VMM.
 ///
 /// Note: this shouldn't be deinitialized.
-pub var global_vmm: VirtualMemoryManager = undefined;
+pub var global_vmm: *VirtualMemoryManager = undefined;
 
 pub fn init(memory_map: *limine.MemoryMapResponse, executable_address_response: *limine.ExecutableAddressResponse) void {
     const allocator = heap.allocator();
+    global_vmm = allocator.create(VirtualMemoryManager) catch |err| {
+        log.err("Failed to allocate VirtualMemoryManager: {}", .{err});
+        @panic("Kernel VMM allocation failed");
+    };
+
+    // use the HHDM address of the first free frame so we don't remap
+    // any pages already in use
     const virt_start = paging.physToVirt(pmm.global_pmm.getFirstFreePage());
-    global_vmm = VirtualMemoryManager.init(virt_start, null, allocator);
+    global_vmm.init(virt_start, virt_end, allocator);
 
     // map physical frames
     const entries = memory_map.getEntries();
@@ -82,10 +89,10 @@ pub const VirtualMemoryManager = struct {
         OverlappingRegion,
     } || std.mem.Allocator.Error;
 
-    pub fn init(virt_start: u64, virt_end: ?u64, allocator: std.mem.Allocator) VirtualMemoryManager {
+    pub fn init(self: *VirtualMemoryManager, virt_start: u64, virt_end: ?u64, allocator: std.mem.Allocator) void {
         const pml4 = paging.PML4.init();
         log.debug("Initializing VirtualMemoryManager with PML4 at {x:0>16}, virt_base {x:0>16}", .{ @intFromPtr(pml4), virt_start });
-        return VirtualMemoryManager{
+        self.* = VirtualMemoryManager{
             .pt_root = pml4,
             .virt_start = virt_start,
             .virt_end = virt_end,
